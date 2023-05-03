@@ -462,17 +462,14 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
 
             // The sudo command is wrapped in a sh to allow us to forward the sudo arguments correctly.
             // The command for sudo to run is wrapped in bash to allow the arguments to the installer command to flow correctly.
-            installCommand = `sh`
-            sudoPassword = await vscode.window.showInputBox({
-                placeHolder: 'password',
-                prompt: 'sudo password required to run .NET SDK installer on /',
-                password: true
-            });
+            installCommand = `open`
+            const commandResult = proc.spawnSync('open', ['-W', `${path.resolve(installerPath)}`]);
+            return commandResult.toString();
         }
 
         try
         {
-            const commandResult = proc.spawnSync(installCommand, os.platform() === 'darwin' ? ['-c', `sudo -S <<< '${sudoPassword}' bash -c 'installer -pkg ${path.resolve(installerPath)} -target /'`] : DotnetCoreAcquisitionWorker.isElevated() ? ['/quiet', '/install', '/norestart'] : []);
+            const commandResult = proc.spawnSync(installCommand, DotnetCoreAcquisitionWorker.isElevated() ? ['/quiet', '/install', '/norestart'] : []);
             return commandResult.toString();
         }
         catch(error : any)
