@@ -43,7 +43,7 @@ chai.use(chaiAsPromised);
 /* tslint:disable:no-any */
 
 suite('DotnetCoreAcquisitionExtension End to End', function() {
-  this.retries(3);
+  this.retries(0);
   const storagePath = path.join(__dirname, 'tmp');
   const mockState = new MockExtensionContext();
   const extensionPath = path.join(__dirname, '/../../..');
@@ -448,7 +448,7 @@ suite('DotnetCoreAcquisitionExtension End to End', function() {
   */
   test('Install Globally (Requires Admin)', async () => {
     // We only test if the process is running under ADMIN because non-admin requires user-intervention.
-    if(DotnetCoreAcquisitionWorker.isElevated())
+    if(DotnetCoreAcquisitionWorker.isElevated() || true)
     {
       const version : string = '7.0.103';
 
@@ -480,6 +480,8 @@ suite('DotnetCoreAcquisitionExtension End to End', function() {
     }
   }).timeout(maxTimeoutTime);
 
+
+  
   test('Install Command Sets the PATH', async () => {
     const context: IDotnetAcquireContext = { version: '5.0', requestingExtensionId: 'ms-dotnettools.sample-extension' };
     const result = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet-sdk.acquire', context);

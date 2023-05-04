@@ -8,6 +8,7 @@ import * as path from 'path';
 import rimraf = require('rimraf');
 import * as proc from 'child_process';
 import * as https from 'https';
+import * as vscode from 'vscode';
 
 import {
     DotnetAcquisitionAlreadyInstalled,
@@ -120,15 +121,16 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
      * @returns the dotnet acqusition result.
      */
     private async acquire(version: string, installRuntime: boolean, globalInstallerResolver : GlobalSDKInstallerResolver | null = null): Promise<IDotnetAcquireResult> {
-        const existingAcquisitionPromise = this.acquisitionPromises[version];
+        /*const existingAcquisitionPromise = this.acquisitionPromises[version];
         if (existingAcquisitionPromise)
         {
             // This version of dotnet is already being acquired. Memoize the promise.
             this.context.eventStream.post(new DotnetAcquisitionInProgress(version));
             return existingAcquisitionPromise.then((res) => ({ dotnetPath: res }));
         }
-        else
-        {
+        */ // todo uncomment this as it needs to be done to debug in mac if it hangs 
+        //else
+        //{
             // We're the only one acquiring this version of dotnet, start the acquisition process.
             let acquisitionPromise = null;
             if(globalInstallerResolver !== null)
@@ -149,7 +151,7 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
 
             this.acquisitionPromises[version] = acquisitionPromise;
             return acquisitionPromise.then((res) => ({ dotnetPath: res }));
-        }
+        //}
     }
 
     /**
@@ -365,8 +367,8 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
     {
         if(os.platform() !== 'win32')
         {
-            // TODO: Implemnet root check on linux
-            return false;
+            const commandResult = proc.spawnSync("id", ["-u"]);
+            return commandResult.status === 0;
         }
 
         try
@@ -392,6 +394,18 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
             else if(installedArch === 'x64')
             {
                 return path.join(`C:\\Program Files\\dotnet\\sdk\\`, specificSDKVersionInstalled);
+            }
+        }
+        else if(os.platform() === 'darwin')
+        {
+            if(installedArch !== 'x64')
+            {
+                return path.join(`/usr/local/share/dotnet/sdk`, specificSDKVersionInstalled);
+            }
+            else
+            {
+                // We only know this to be correct in the ARM scenarios but I decided to assume the default is the same elsewhere.
+                return path.join(`/usr/local/share/dotnet/x64/dotnet/sdk`, specificSDKVersionInstalled);
             }
         }
 
@@ -434,6 +448,24 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
     {
         // TODO: Handle this differently depending on the package type.
         let installCommand = `${path.resolve(installerPath)}`;
+        let sudoPassword : string | undefined = '';
+
+        if(os.platform() === 'darwin')
+        {
+            // For Mac:
+            // We need to run the .NET SDK installer under sudo, otherwise it will return success without doing anything.
+            // We also get a .pkg file which we cannot just run, we must forward it to the OSX installer utility.
+            // The Mac installer utility does not allow you to pass arguments in to the pkg under execution, so we cannot rely on the flags passed to the installer here.
+
+            // To run a command under sudo, we need to prompt the user for their password.
+            // We MUST make sure that this does NOT get echo'd out anywhere.
+
+            // The sudo command is wrapped in a sh to allow us to forward the sudo arguments correctly.
+            // The command for sudo to run is wrapped in bash to allow the arguments to the installer command to flow correctly.
+            installCommand = `open`
+            const commandResult = proc.spawnSync('open', ['-W', `${path.resolve(installerPath)}`]);
+            return commandResult.toString();
+        }
 
         try
         {
