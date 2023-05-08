@@ -6,6 +6,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import rimraf = require('rimraf');
+import * as proc from 'child_process';
+import * as https from 'https';
+
 import {
     DotnetAcquisitionAlreadyInstalled,
     DotnetAcquisitionDeletion,
@@ -23,6 +26,10 @@ import { IDotnetAcquireResult } from '../IDotnetAcquireResult';
 import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
 import { IDotnetCoreAcquisitionWorker } from './IDotnetCoreAcquisitionWorker';
 import { IDotnetInstallationContext } from './IDotnetInstallationContext';
+import { GlobalSDKInstallerResolver } from './GlobalSDKInstallerResolver';
+import { createSemanticDiagnosticsBuilderProgram } from 'typescript';
+import { FileUtilities } from '../Utils/FileUtilities';
+import { WebRequestWorker } from '../Utils/WebRequestWorker';
 
 export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker {
     private readonly installingVersionsKey = 'installing';
@@ -52,10 +59,25 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
         this.context.eventStream.post(new DotnetUninstallAllCompleted());
     }
 
+    /**
+     *
+     * @remarks this is simply a wrapper around the acquire function.
+     * @returns the requested dotnet path.
+     */
     public async acquireSDK(version: string): Promise<IDotnetAcquireResult> {
         return this.acquire(version, false);
     }
 
+    public async acquireGlobalSDK(installerResolver: GlobalSDKInstallerResolver): Promise<IDotnetAcquireResult>
+    {
+        return this.acquire(await installerResolver.getFullVersion(), false, installerResolver);
+    }
+
+    /**
+     *
+     * @remarks this is simply a wrapper around the acquire function.
+     * @returns the requested dotnet path.
+     */
     public async acquireRuntime(version: string): Promise<IDotnetAcquireResult> {
         return this.acquire(version, true);
     }
@@ -72,12 +94,14 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
         const dotnetPath = path.join(dotnetInstallDir, this.dotnetExecutable);
         let installedVersions = this.context.extensionState.get<string[]>(this.installedVersionsKey, []);
 
-        if (installedVersions.length === 0 && fs.existsSync(dotnetPath) && !installRuntime) {
+        if (installedVersions.length === 0 && fs.existsSync(dotnetPath) && !installRuntime)
+        {
             // The education bundle already laid down a local install, add it to our managed installs
             installedVersions = await this.managePreinstalledVersion(dotnetInstallDir, installedVersions);
         }
 
-        if (installedVersions.includes(version) && fs.existsSync(dotnetPath)) {
+        if (installedVersions.includes(version) && fs.existsSync(dotnetPath))
+        {
             // Requested version has already been installed.
             this.context.eventStream.post(new DotnetAcquisitionStatusResolved(version));
             return { dotnetPath };
@@ -88,24 +112,55 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
         return undefined;
     }
 
-    private async acquire(version: string, installRuntime: boolean): Promise<IDotnetAcquireResult> {
+    /**
+     *
+     * @param version the version to get of the runtime or sdk.
+     * @param installRuntime true for runtime acquisition, false for SDK.
+     * @param global false for local install, true for global SDK installs.
+     * @returns the dotnet acqusition result.
+     */
+    private async acquire(version: string, installRuntime: boolean, globalInstallerResolver : GlobalSDKInstallerResolver | null = null): Promise<IDotnetAcquireResult> {
         const existingAcquisitionPromise = this.acquisitionPromises[version];
-        if (existingAcquisitionPromise) {
+        if (existingAcquisitionPromise)
+        {
             // This version of dotnet is already being acquired. Memoize the promise.
             this.context.eventStream.post(new DotnetAcquisitionInProgress(version));
             return existingAcquisitionPromise.then((res) => ({ dotnetPath: res }));
-        } else {
+        }
+        else
+        {
             // We're the only one acquiring this version of dotnet, start the acquisition process.
-            const acquisitionPromise = this.acquireCore(version, installRuntime).catch((error: Error) => {
-                delete this.acquisitionPromises[version];
-                throw new Error(`.NET Acquisition Failed: ${error.message}`);
-            });
+            let acquisitionPromise = null;
+            if(globalInstallerResolver !== null)
+            {
+                // We are requesting a global sdk install.
+                acquisitionPromise = this.acquireGlobalCore(globalInstallerResolver).catch((error: Error) => {
+                    delete this.acquisitionPromises[version];
+                    throw new Error(`.NET Acquisition Failed: ${error.message}`);
+                });
+            }
+            else
+            {
+                acquisitionPromise = this.acquireCore(version, installRuntime).catch((error: Error) => {
+                    delete this.acquisitionPromises[version];
+                    throw new Error(`.NET Acquisition Failed: ${error.message}`);
+                });
+            }
 
             this.acquisitionPromises[version] = acquisitionPromise;
             return acquisitionPromise.then((res) => ({ dotnetPath: res }));
         }
     }
 
+    /**
+     *
+     * @param version The version of the object to acquire.
+     * @param installRuntime true if the request is to install the runtime, false for the SDK.
+     * @param global false if we're doing a local install, true if we're doing a global install. Only supported for the SDK atm.
+     * @returns the dotnet path of the acquired dotnet.
+     *
+     * @remarks it is called "core" because it is the meat of the actual acquisition work; this has nothing to do with .NET core vs framework.
+     */
     private async acquireCore(version: string, installRuntime: boolean): Promise<string> {
         const installingVersions = this.context.extensionState.get<string[]>(this.installingVersionsKey, []);
         let installedVersions = this.context.extensionState.get<string[]>(this.installedVersionsKey, []);
@@ -158,6 +213,44 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
         return dotnetPath;
     }
 
+    private async acquireGlobalCore(globalInstallerResolver : GlobalSDKInstallerResolver): Promise<string>
+    {
+        const conflictingVersion = await globalInstallerResolver.GlobalInstallWithConflictingVersionAlreadyExists()
+        if (conflictingVersion !== '')
+        {
+            throw Error(`An global install is already on the machine with a version that conflicts with the requested version.`)
+        }
+
+        // TODO fix handling with empty input split
+        // TODO check if theres a partial install from the extension if that can happen
+        // TODO fix registry check
+        // TODO report installer OK if conflicting exists
+
+        const installerUrl : string = await globalInstallerResolver.getInstallerUrl();
+        const installerFile : string = await this.downloadInstallerOnMachine(installerUrl);
+
+        const installingVersion = await globalInstallerResolver.getFullVersion();
+        await this.addVersionToExtensionState(this.installingVersionsKey, installingVersion);
+
+        this.context.eventStream.post(new DotnetAcquisitionStarted(installingVersion));
+        const installerResult : string = await this.executeInstaller(installerFile);
+        if(installerResult !== '0')
+        {
+            // TODO handle this.
+        }
+        const installedSDKPath : string = this.getGloballyInstalledSDKPath(await globalInstallerResolver.getFullVersion(), os.arch());
+        this.wipeDirectory(path.dirname(installerFile));
+
+        // TODO: Add exe to path.
+        //this.context.installationValidator.validateDotnetInstall(installingVersion, installedSDKPath);
+
+        // TODO see if the below is needed
+        await this.removeVersionFromExtensionState(this.installingVersionsKey, installingVersion);
+        await this.addVersionToExtensionState(this.installedVersionsKey, installingVersion);
+
+        return installedSDKPath;
+    }
+
     private async uninstallRuntime(version: string) {
         delete this.acquisitionPromises[version];
 
@@ -204,4 +297,172 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
         }
         return installedVersions;
     }
+
+    /**
+     *
+     * @param installerUrl the url of the installer to download.
+     * @returns the path to the installer which was downloaded into a directory managed by us.
+     */
+    private async downloadInstallerOnMachine(installerUrl : string) : Promise<string>
+    {
+        const ourInstallerDownloadFolder = DotnetCoreAcquisitionWorker.getInstallerDownloadFolder();
+        this.wipeDirectory(ourInstallerDownloadFolder);
+        const installerPath = path.join(ourInstallerDownloadFolder, `${installerUrl.split('/').slice(-1)}`);
+        await this.download(installerUrl, installerPath);
+        return installerPath;
+    }
+
+    private async download(url : string, dest : string) {
+        return new Promise<void>((resolve, reject) => {
+
+            const installerDir = path.dirname(dest);
+            if (!fs.existsSync(installerDir)){
+                fs.mkdirSync(installerDir);
+            }
+            const file = fs.createWriteStream(dest, { flags: "wx" });
+
+            const request = https.get(url, response => {
+                if (response.statusCode === 200) {
+                    response.pipe(file);
+                } else {
+                    file.close();
+                    fs.unlink(dest, () => {}); // Delete temp file
+                    reject(`Server responded with ${response.statusCode}: ${response.statusMessage}`);
+                }
+            });
+
+            request.on("error", err => {
+                file.close();
+                fs.unlink(dest, () => {}); // Delete temp file
+                reject(err.message);
+            });
+
+            file.on("finish", () => {
+                resolve();
+            });
+
+            file.on("error", err => {
+                file.close();
+
+                if (err.message === "EEXIST")
+                {
+                    reject("File already exists");
+                }
+                else
+                {
+                    fs.unlink(dest, () => {}); // Delete temp file
+                    reject(err.message);
+                }
+            });
+        });
+    }
+
+    /**
+     *
+     * @returns true if the process is running with admin privelleges on windows.
+     */
+    public static isElevated() : boolean
+    {
+        if(os.platform() !== 'win32')
+        {
+            // TODO: Make sure this works on mac and linux.
+            const commandResult = proc.spawnSync("id", ["-u"]);
+            return commandResult.status === 0;
+        }
+
+        try
+        {
+            // If we can execute this command on Windows then we have admin rights.
+            proc.execFileSync( "net", ["session"], { "stdio": "ignore" } );
+            return true;
+        }
+        catch ( error )
+        {
+            return false;
+        }
+    }
+
+    private getGloballyInstalledSDKPath(specificSDKVersionInstalled : string, installedArch : string) : string
+    {
+        if(os.platform() === 'win32')
+        {
+            if(installedArch === 'x32')
+            {
+                return path.join(`C:\\Program Files (x86)\\dotnet\\sdk\\`, specificSDKVersionInstalled);
+            }
+            else if(installedArch === 'x64')
+            {
+                return path.join(`C:\\Program Files\\dotnet\\sdk\\`, specificSDKVersionInstalled);
+            }
+        }
+        else if(os.platform() === 'darwin')
+        {
+            if(installedArch !== 'x64')
+            {
+                return path.join(`/usr/local/share/dotnet/sdk`, specificSDKVersionInstalled);
+            }
+            else
+            {
+                // We only know this to be correct in the ARM scenarios but I decided to assume the default is the same elsewhere.
+                return path.join(`/usr/local/share/dotnet/x64/dotnet/sdk`, specificSDKVersionInstalled);
+            }
+        }
+
+        // TODO Add code for linux: it should be root. Check security of returning this
+        return '';
+    }
+
+    /**
+     *
+     * @param directoryToWipe the directory to delete all of the files in if privellege to do so exists.
+     */
+    private wipeDirectory(directoryToWipe : string)
+    {
+        fs.readdir(directoryToWipe, (err, files) => {
+            if (err) throw err;
+
+            for (const file of files) {
+              fs.unlink(path.join(directoryToWipe, file), (err) => {
+                if (err) throw err;
+              });
+            }
+          });
+    }
+
+    /**
+     *
+     * @returns The folder where global sdk installers will be downloaded onto the disk.
+     */
+    public static getInstallerDownloadFolder() : string
+    {
+        return path.join(__dirname, 'installers');
+    }
+
+    /**
+     *
+     * @param installerPath The path to the installer file to run.
+     * @returns The exit result from running the global install.
+     */
+    private async executeInstaller(installerPath : string) : Promise<string>
+    {
+        if(os.platform() === 'darwin')
+        {
+            // For Mac:
+            // We don't rely on the installer because it doesn't allow us to run without sudo, and we don't want to handle the user password.
+            // The -W flag makes it so we wait for the installer .pkg to exit, though we are unable to get the exit code.
+            const commandResult = proc.spawnSync('open', ['-W', `${path.resolve(installerPath)}`]);
+            return commandResult.toString();
+        }
+
+        try
+        {
+            const commandResult = proc.spawnSync(`${path.resolve(installerPath)}`, DotnetCoreAcquisitionWorker.isElevated() ? ['/quiet', '/install', '/norestart'] : []);
+            return commandResult.toString();
+        }
+        catch(error : any)
+        {
+            return error;
+        }
+    }
 }
+

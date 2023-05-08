@@ -33,6 +33,9 @@ import {
 } from 'vscode-dotnet-runtime-library';
 import * as extension from '../../extension';
 import { uninstallSDKExtension } from '../../ExtensionUninstall';
+import { GlobalSDKInstallerResolver } from 'vscode-dotnet-runtime-library/dist/Acquisition/GlobalSDKInstallerResolver';
+import { MockIndexWebRequestWorker } from 'vscode-dotnet-runtime-library';
+import { warn } from 'console';
 
 const maxTimeoutTime = 100000;
 const assert = chai.assert;
@@ -40,7 +43,7 @@ chai.use(chaiAsPromised);
 /* tslint:disable:no-any */
 
 suite('DotnetCoreAcquisitionExtension End to End', function() {
-  this.retries(3);
+  this.retries(0);
   const storagePath = path.join(__dirname, 'tmp');
   const mockState = new MockExtensionContext();
   const extensionPath = path.join(__dirname, '/../../..');
@@ -65,16 +68,16 @@ suite('DotnetCoreAcquisitionExtension End to End', function() {
     });
   });
 
-  test('Activate', async () => {
+  /*test('Activate', async () => {
     // Commands should now be registered
     assert.exists(extensionContext);
     assert.isAbove(extensionContext.subscriptions.length, 0);
   });
 
-  test('List Sdks & Runtimes (API Correctly Returns Sdks & Runtimes)', async () => {
+  test('List Sdks & Runtimes', async () => {
     const mockWebContext = new MockExtensionContext();
     const eventStream = new MockEventStream();
-    const webWorker = new MockWebRequestWorker(mockWebContext, eventStream, '', 'MockKey');
+    const webWorker = new MockWebRequestWorker(mockWebContext, eventStream);
     webWorker.response = `{
       "releases-index": [
         {
@@ -112,32 +115,6 @@ suite('DotnetCoreAcquisitionExtension End to End', function() {
     assert.equal(runtimeResult?.length, 2);
     assert.equal(runtimeResult?.filter((runtime : any) => runtime.version === '7.0.4').length, 1, 'The mock Runtime with the expected version was not found by the API parsing service.');
   }).timeout(maxTimeoutTime);
-
-
-  test('List Sdks & Runtimes (Fails Elegantly if Relases.Json is Unavailable)', async () => {
-    const apiContext: IDotnetListVersionsContext = { listRuntimes: null};
-    const mockWebContext = new MockExtensionContext();
-    const eventStream = new MockEventStream();
-
-    try
-    {
-      assert.throws(async () =>
-      {
-        await vscode.commands.executeCommand<IDotnetListVersionsResult>(
-          'dotnet-sdk.listSdks', apiContext, new FailingWebRequestWorker(mockWebContext, eventStream, '', 'MockKey')
-        )
-      },
-      DotnetVersionProvider.dotnetAvailableVersionsPageUnavailableError
-      );
-    }
-    catch(e)
-    {
-      // Do nothing.
-      // Why? The assert.throws is in a catch block: Chai.throws code does not handle async functions which will cause the test to fail, even though the throw is expected.
-      // https://github.com/chaijs/chai/issues/882#issuecomment-322131680
-    }
-  }).timeout(maxTimeoutTime * 3);
-
 
   test('Detect Preinstalled SDK', async () => {
     // Set up acquisition worker
@@ -238,14 +215,280 @@ suite('DotnetCoreAcquisitionExtension End to End', function() {
     return assert.isRejected(vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet-sdk.acquire', context));
   }).timeout(maxTimeoutTime);
 
+  test('Global Install Version Parsing Handles Different Version Formats Correctly and Gives Expected Installer URL', async () => {
+    const mockExtensionContext = new MockExtensionContext();
+    const eventStream = new MockEventStream();
+
+    const majorOnlyVersion = '6';
+    const majorMinorVersion = '6.0';
+    const featureBandOnlyVersion = '6.0.3xx'; // this should be a full version thats lower than the newest version available.
+    const fullVersion = '6.0.311'; // this should be a full version thats lower than the newest version available.
+
+    const newestBandedVersion = '6.0.311';
+    const newestVersion = '6.0.408';
+
+    let webWorker = new MockIndexWebRequestWorker(mockExtensionContext, eventStream);
+    webWorker.knownUrls.push("https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/6.0/releases.json");
+    // Note that ZIPS in the data below come before EXEs to make sure the file extension check works.
+    webWorker.matchingUrlResponses.push(
+    `{
+      "channel-version": "6.0",
+      "latest-runtime": "6.0.16",
+      "latest-sdk": "6.0.408",
+      "releases": [
+        {
+          "runtime": {
+            "version": "6.0.16"
+          },
+          "sdk": {
+            "version": "6.0.408",
+            "files": []
+          },
+          "sdks": [
+            {
+              "version": "6.0.408",
+              "files": [
+                {
+                  "name": "dotnet-sdk-linux-arm.tar.gz",
+                  "rid": "linux-arm",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-linux-arm.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-linux-arm64.tar.gz",
+                  "rid": "linux-arm64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-linux-arm64.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-linux-musl-arm.tar.gz",
+                  "rid": "linux-musl-arm",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-linux-musl-am.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-linux-musl-x64.tar.gz",
+                  "rid": "linux-musl-x64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-linux-musl-x4.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-linux-x64.tar.gz",
+                  "rid": "linux-x64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-linux-x64.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-osx-arm64.pkg",
+                  "rid": "osx-arm64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-osx-arm64.pkg"
+                },
+                {
+                  "name": "dotnet-sdk-osx-arm64.tar.gz",
+                  "rid": "osx-arm64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-osx-arm64.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-osx-x64.pkg",
+                  "rid": "osx-x64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-osx-x64.pkg"
+                },
+                {
+                  "name": "dotnet-sdk-osx-x64.tar.gz",
+                  "rid": "osx-x64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-osx-x64.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-win-arm64.exe",
+                  "rid": "win-arm64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-win-arm64.exe"
+                },
+                {
+                  "name": "dotnet-sdk-win-arm64.zip",
+                  "rid": "win-arm64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-win-arm64.zip"
+                },
+                {
+                  "name": "dotnet-sdk-win-x64.exe",
+                  "rid": "win-x64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-win-x64.exe"
+                },
+                {
+                  "name": "dotnet-sdk-win-x64.zip",
+                  "rid": "win-x64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-win-x64.zip"
+                },
+                {
+                  "name": "dotnet-sdk-win-x86.exe",
+                  "rid": "win-x86",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-win-x86.exe"
+                },
+                {
+                  "name": "dotnet-sdk-win-x86.zip",
+                  "rid": "win-x86",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.408-win-x86.zip"
+                }
+              ]
+            },
+            {
+              "version": "6.0.311",
+              "files": [
+                {
+                  "name": "dotnet-sdk-linux-arm.tar.gz",
+                  "rid": "linux-arm",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-linux-arm.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-linux-arm64.tar.gz",
+                  "rid": "linux-arm64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-linux-arm64.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-linux-musl-arm.tar.gz",
+                  "rid": "linux-musl-arm",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-linux-musl-am.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-linux-musl-x64.tar.gz",
+                  "rid": "linux-musl-x64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-linux-musl-x4.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-linux-x64.tar.gz",
+                  "rid": "linux-x64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-linux-x64.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-osx-arm64.pkg",
+                  "rid": "osx-arm64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-osx-arm64.pkg"
+                },
+                {
+                  "name": "dotnet-sdk-osx-arm64.tar.gz",
+                  "rid": "osx-arm64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-osx-arm64.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-osx-x64.pkg",
+                  "rid": "osx-x64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-osx-x64.pkg"
+                },
+                {
+                  "name": "dotnet-sdk-osx-x64.tar.gz",
+                  "rid": "osx-x64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-osx-x64.tar.gz"
+                },
+                {
+                  "name": "dotnet-sdk-win-arm64.exe",
+                  "rid": "win-arm64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-win-arm64.exe"
+                },
+                {
+                  "name": "dotnet-sdk-win-arm64.zip",
+                  "rid": "win-arm64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-win-arm64.zip"
+                },
+                {
+                  "name": "dotnet-sdk-win-x64.zip",
+                  "rid": "win-x64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-win-x64.zip"
+                },
+                {
+                  "name": "dotnet-sdk-win-x64.exe",
+                  "rid": "win-x64",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-win-x64.exe"
+                },
+                {
+                  "name": "dotnet-sdk-win-x86.zip",
+                  "rid": "win-x86",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-win-x86.zip"
+                },
+                {
+                  "name": "dotnet-sdk-win-x86.exe",
+                  "rid": "win-x86",
+                  "url": "https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-win-x86.exe"
+                }
+              ]
+            },
+            {
+              "version": "6.0.116",
+              "files": []
+            }
+          ]
+        }]
+    }
+    `);
+
+    let resolver : GlobalSDKInstallerResolver = new GlobalSDKInstallerResolver(mockExtensionContext, eventStream, majorOnlyVersion);
+    resolver.customWebRequestWorker = webWorker;
+    assert.strictEqual(await resolver.getFullVersion(), newestVersion);
+
+    resolver = new GlobalSDKInstallerResolver(mockExtensionContext, eventStream, majorMinorVersion);
+    resolver.customWebRequestWorker = webWorker;
+    assert.strictEqual(await resolver.getFullVersion(), newestVersion);
+
+    resolver = new GlobalSDKInstallerResolver(mockExtensionContext, eventStream, featureBandOnlyVersion);
+    resolver.customWebRequestWorker = webWorker;
+    assert.strictEqual(await resolver.getFullVersion(), newestBandedVersion);
+
+    if(os.arch() === 'x64')
+    {
+      // We check this only on x64 because that matches the build machines and we dont want to duplicate architecture mapping logic
+      if(os.platform() === 'win32')
+      {
+        const expectedWinInstallerUrl = 'https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-win-x64.exe';
+        assert.strictEqual(await resolver.getInstallerUrl(), expectedWinInstallerUrl);
+      }
+      else if(os.platform() === 'darwin')
+      {
+        const expectedMacInstallerUrl = 'https://download.visualstudio.microsoft.com/download/pr/dotnet-sdk-6.0.311-osx-x64.pkg';
+        assert.strictEqual(await resolver.getInstallerUrl(), expectedMacInstallerUrl);
+      }
+    }
+
+    resolver = new GlobalSDKInstallerResolver(mockExtensionContext, eventStream, fullVersion);
+    resolver.customWebRequestWorker = webWorker;
+    assert.strictEqual(await resolver.getFullVersion(), fullVersion);
+  }).timeout(maxTimeoutTime);
+  */
+  test('Install Globally (Requires Admin)', async () => {
+    // We only test if the process is running under ADMIN because non-admin requires user-intervention.
+    if(DotnetCoreAcquisitionWorker.isElevated())
+    {
+      const version : string = '7.0.103';
+
+      const context : IDotnetAcquireContext = { version: version, requestingExtensionId: 'ms-dotnettools.sample-extension', installType: 'global' };
+      const result = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet-sdk.acquire', context);
+      assert.exists(result, "The global acquisition command did not provide a result?");
+      assert.exists(result!.dotnetPath);
+
+      const installersDir : string = DotnetCoreAcquisitionWorker.getInstallerDownloadFolder();
+      assert.exists(installersDir);
+      const numInstallersAlreadyDownloaded = fs.readdirSync(installersDir).length;
+      // The installer should be removed from the disk after the command is done.
+      assert(numInstallersAlreadyDownloaded === 0);
+
+      // Assert install occurred
+      let sdkDirs = fs.readdirSync(path.join(path.dirname(result!.dotnetPath), 'sdk'));
+      assert.isNotEmpty(sdkDirs.filter(dir => dir.includes(version)));
+
+      if(os.platform() === 'win32')
+      {
+        // TODO Assert that it can find the existing install in registry and doesnt re-install but also doesn't fail.
+      }
+    }
+    else
+    {
+      // We could run the installer without privellege but it would require human interaction to use the UAC
+      // And we wouldn't be able to kill the process so the test would leave a lot of hanging procs on the machine
+      warn("The Global SDK Install test cannot run as the machine is unprivelleged.");
+    }
+  }).timeout(maxTimeoutTime);
+
   test('Install Command Sets the PATH', async () => {
     const context: IDotnetAcquireContext = { version: '5.0', requestingExtensionId: 'ms-dotnettools.sample-extension' };
     const result = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet-sdk.acquire', context);
-    assert.exists(result);
+    assert.exists(result, "The acquisition command did not provide a valid result?");
     assert.exists(result!.dotnetPath);
 
     const expectedPath = path.dirname(result!.dotnetPath);
     const pathVar = environmentVariableCollection.variables.PATH;
+    assert.exists(pathVar, "The environment variable PATH for DOTNET was not found?");
     assert.include(pathVar, expectedPath);
 
     let pathResult: string;

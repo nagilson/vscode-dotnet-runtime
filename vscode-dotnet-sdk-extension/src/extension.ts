@@ -38,6 +38,7 @@ import {
 } from 'vscode-dotnet-runtime-library';
 
 import { dotnetCoreAcquisitionExtensionId } from './DotnetCoreAcquistionId';
+import { GlobalSDKInstallerResolver } from 'vscode-dotnet-runtime-library/dist/Acquisition/GlobalSDKInstallerResolver';
 
 // tslint:disable no-var-requires
 const packageJson = require('../package.json');
@@ -128,13 +129,22 @@ export function activate(context: vscode.ExtensionContext, extensionContext?: IE
 
         const pathResult = callWithErrorHandling(async () => {
             eventStream.post(new DotnetSDKAcquisitionStarted());
-
             eventStream.post(new DotnetAcquisitionRequested(commandContext.version, commandContext.requestingExtensionId));
-            const resolvedVersion = await versionResolver.getFullSDKVersion(commandContext.version);
-            const dotnetPath = await acquisitionWorker.acquireSDK(resolvedVersion);
-            const pathEnvVar = path.dirname(dotnetPath.dotnetPath);
-            setPathEnvVar(pathEnvVar, displayWorker, context.environmentVariableCollection);
-            return dotnetPath;
+            if(commandContext.installType === 'global')
+            {
+                const globalInstallerResolver = new GlobalSDKInstallerResolver(context.globalState, eventStream, commandContext.version);
+                const dotnetPath = await acquisitionWorker.acquireGlobalSDK(globalInstallerResolver);
+                // TODO: Check to make sure path is set by the installer.
+                return dotnetPath;
+            }
+            else
+            {
+                const resolvedVersion = await versionResolver.getFullSDKVersion(commandContext.version);
+                const dotnetPath = await acquisitionWorker.acquireSDK(resolvedVersion);
+                const pathEnvVar = path.dirname(dotnetPath.dotnetPath);
+                setPathEnvVar(pathEnvVar, displayWorker, context.environmentVariableCollection);
+                return dotnetPath;
+            }
         }, issueContext(commandContext.errorConfiguration, 'acquireSDK'));
         return pathResult;
     });
@@ -153,9 +163,7 @@ export function activate(context: vscode.ExtensionContext, extensionContext?: IE
         async (commandContext: IDotnetListVersionsContext | undefined, customWebWorker: WebRequestWorker | undefined) => {
         const webWorker = customWebWorker !== undefined ? customWebWorker : new WebRequestWorker(
             context.globalState,
-            eventStream,
-            DotnetVersionProvider.availableDontetVersionsUrl,
-            'listSDKVersionsCacheKey'
+            eventStream
         );
 
         return new DotnetVersionProvider().GetAvailableDotnetVersions(commandContext, webWorker);

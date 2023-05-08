@@ -8,7 +8,7 @@ import { WebRequestWorker } from './WebRequestWorker';
 export class DotnetVersionProvider {
 
     static availableDontetVersionsUrl = 'https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json';
-    static dotnetAvailableVersionsPageUnavailableError = 'The service to request available SDK versions (releases.json) is unavailable.';
+    static dotnetAvailableVersionsPageUnavailableError = 'The service to request available SDK versions (releases-index.json) is unavailable.';
 
     /**
      * @remarks
@@ -31,7 +31,7 @@ export class DotnetVersionProvider {
 
         try
         {
-            response = await webWorker.getCachedData();
+            response = await webWorker.getCachedData(DotnetVersionProvider.availableDontetVersionsUrl);
         }
         catch(e)
         {
