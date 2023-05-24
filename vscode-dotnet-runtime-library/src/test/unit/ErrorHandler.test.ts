@@ -10,7 +10,7 @@ import {
     timeoutConstants,
     UninstallErrorConfiguration,
 } from '../../Utils/ErrorHandler';
-import { callWithErrorHandling } from '../../Utils/ErrorHandler';
+import { callWithErrorHandling, ErrorConfiguration } from '../../Utils/ErrorHandler';
 import { IIssueContext } from '../../Utils/IIssueContext';
 import { MockExtensionConfigurationWorker } from '../mocks/MockExtensionConfigurationWorker';
 import { MockEventStream, MockLoggingObserver } from '../mocks/MockObjects';
@@ -55,6 +55,24 @@ suite('ErrorHandler Unit Tests', () => {
         assert.include(displayWorker.clipboardText, errorString);
         assert.includeMembers(displayWorker.options,
             [errorConstants.reportOption, errorConstants.hideOption, errorConstants.moreInfoOption, errorConstants.configureManuallyOption]);
+    });
+
+    test('DisableErrorPopups option prevents error from popping up', async () => {
+        const errorString = 'Fake error message';
+        const displayWorker = new MockWindowDisplayWorker();
+
+        let issueContextWithErrorPopupsDisabled = issueContext(displayWorker, new MockEventStream());
+        issueContextWithErrorPopupsDisabled.errorConfiguration = UninstallErrorConfiguration.DisableErrorPopups;
+        // DisplayAllErrorPopups is used when errors should occur. In this case, they shouldn't. The fact that we're grabbing from UninstallErrorConfiguration is irrelevant and it's picked at random here since the error type is a mock.
+
+        const res = await callWithErrorHandling<string>(() => {
+            displayWorker.copyToUserClipboard(errorString);
+            throw new Error(errorString);
+        }, issueContextWithErrorPopupsDisabled, 'MockId');
+
+        // No error should be stored on the mock error display window. 
+        assert.equal(displayWorker.errorMessage, '');
+        assert.equal(displayWorker.clipboardText, '');
     });
 
     test('Path can be manually configured via popup', async () => {

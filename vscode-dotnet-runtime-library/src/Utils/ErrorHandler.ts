@@ -52,7 +52,8 @@ export async function callWithErrorHandling<T>(callback: () => T, context: IIssu
     } catch (caughtError) {
         const error = caughtError as Error;
         context.eventStream.post(new DotnetCommandFailed(error, context.commandName));
-        if (context.errorConfiguration === AcquireErrorConfiguration.DisplayAllErrorPopups) {
+        if (context.errorConfiguration === AcquireErrorConfiguration.DisplayAllErrorPopups)
+        {
             if ((error.message as string).includes(timeoutConstants.timeoutMessage)) {
                 context.displayWorker.showErrorMessage(`${errorConstants.errorMessage}${ context.version ? ` (${context.version})` : '' }: ${ error.message }`,
                                                         async (response: string | undefined) => {
