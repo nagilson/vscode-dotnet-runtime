@@ -38,7 +38,6 @@ export function activate(context: vscode.ExtensionContext) {
     runtimeExtension.activate(context);
     sdkExtension.activate(context);
 
-
     // --------------------------------------------------------------------------
 
     // -------------------runtime extension registrations------------------------
