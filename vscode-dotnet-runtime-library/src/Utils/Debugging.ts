@@ -41,7 +41,7 @@ export class Debugging
                     eventStream?.post(new DotnetDebuggingMessage(`Writing to ${Debugging.logFile}`));
                 }
 
-                const file = fs.createWriteStream(Debugging.logFile, { flags: 'wx' });
+                const file = fs.createWriteStream(Debugging.logFile, { flags: 'a+' });
                 file.write(message);
             }
         }

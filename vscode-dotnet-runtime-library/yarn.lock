@@ -148,7 +148,7 @@
   dependencies:
     "@types/node" "*"
 
-"@types/retry@0.12.1":
+"@types/retry@^0.12.0":
   version "0.12.1"
   resolved "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public-npm/npm/registry/@types/retry/-/retry-0.12.1.tgz"
   integrity sha1-2PHA0Nwjr61twWqemToIZXdLQGU=
@@ -1588,12 +1588,12 @@ p-locate@^5.0.0:
   dependencies:
     p-limit "^3.0.2"
 
-p-retry@^5.1.2:
-  version "5.1.2"
-  resolved "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public-npm/npm/registry/p-retry/-/p-retry-5.1.2.tgz"
-  integrity sha1-wW6u5PIBb5Fh0S2kDTuLDy48G3Y=
+p-retry@^4.6.1:
+  version "4.6.1"
+  resolved "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public-npm/npm/registry/p-retry/-/p-retry-4.6.1.tgz"
+  integrity sha1-j83dXN96Z6CRGpzy7w5d9/YCMWw=
   dependencies:
-    "@types/retry" "0.12.1"
+    "@types/retry" "^0.12.0"
     retry "^0.13.1"
 
 p-some@^5.0.0:
