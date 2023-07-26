@@ -162,7 +162,7 @@ export class WinMacGlobalInstaller extends IGlobalInstaller {
             // The program files should always be set, but in the off chance they are wiped, we can try to use the default as backup.
             // Both ia32 and x64 machines will use 'Program Files'
             // We don't anticipate a user would need to install the x86 SDK, and we dont have any routes that support that yet.
-            return path.resolve(process.env.programfiles ?? `C:\\Program Files\\dotnet\\sdk\\`);
+            return path.resolve(path.join(process.env.programfiles!, 'dotnet', 'sdk') ?? `C:\\Program Files\\dotnet\\sdk\\`);
         }
         else if(os.platform() === 'darwin')
         {

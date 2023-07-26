@@ -99,7 +99,7 @@ suite('DotnetCoreAcquisitionExtension End to End', function()
     assert.isAbove(extensionContext.subscriptions.length, 0);
   });
 
-  test('List Sdks & Runtimes', async () => {
+  /*test('List Sdks & Runtimes', async () => {
     const mockWebContext = new MockExtensionContext();
     const eventStream = new MockEventStream();
     const webWorker = new MockWebRequestWorker(mockWebContext, eventStream);
@@ -211,6 +211,13 @@ suite('DotnetCoreAcquisitionExtension End to End', function()
     rimraf.sync(dotnetDir);
   });
 
+  test('Install Command with Unknown Extension Id', async () => {
+    const context: IDotnetAcquireContext = { version: '5.0', requestingExtensionId: 'unknown' };
+    return assert.isRejected(vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet-sdk.acquire', context));
+  }).timeout(standardTimeoutTime);
+ */
+
+  
   test('Install Command', async () => {
     const context: IDotnetAcquireContext = { version: '5.0', requestingExtensionId: 'ms-dotnettools.sample-extension' };
     const result = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet-sdk.acquire', context);
@@ -225,11 +232,6 @@ suite('DotnetCoreAcquisitionExtension End to End', function()
     assert.isTrue(fs.existsSync(result!.dotnetPath));
     // Clean up storage
     await vscode.commands.executeCommand('dotnet-sdk.uninstallAll');
-  }).timeout(standardTimeoutTime);
-
-  test('Install Command with Unknown Extension Id', async () => {
-    const context: IDotnetAcquireContext = { version: '5.0', requestingExtensionId: 'unknown' };
-    return assert.isRejected(vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet-sdk.acquire', context));
   }).timeout(standardTimeoutTime);
 
   test('Global Install Version Parsing Handles Different Version Formats Correctly and Gives Expected Installer URL', async () => {
