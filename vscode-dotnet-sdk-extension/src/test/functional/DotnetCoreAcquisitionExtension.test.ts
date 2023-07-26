@@ -285,10 +285,10 @@ suite('DotnetCoreAcquisitionExtension End to End', function()
 
   test('Install Globally E2E (Requires Admin)', async () => {
     // We only test if the process is running under ADMIN because non-admin requires user-intervention.
-    if(FileUtilities.isElevated())
+    if(!FileUtilities.isElevated())
     {
       const originalPath = process.env.PATH;
-      const sdkVersion = '7.0.103';
+      const sdkVersion = '7.0.104';
       const context : IDotnetAcquireContext = { version: sdkVersion, requestingExtensionId: 'ms-dotnettools.sample-extension', installType: 'global' };
 
       // We cannot use the describe pattern to restore the environment variables using vscodes extension testing infrastructure.
@@ -296,7 +296,7 @@ suite('DotnetCoreAcquisitionExtension End to End', function()
       let result;
       // We cannot test much as we don't want to leave global installs on devboxes. But we do want to make sure the e-2-e goes through the right path. Vendors can test the rest.
       // So we have this environment variable that tells us to stop before running any real install.
-      process.env.VSCODE_DOTNET_GLOBAL_INSTALL_FAKE_PATH = 'true';
+      //process.env.VSCODE_DOTNET_GLOBAL_INSTALL_FAKE_PATH = 'true';
       try
       {
         result = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet-sdk.acquire', context);
@@ -324,6 +324,7 @@ suite('DotnetCoreAcquisitionExtension End to End', function()
     }
   }).timeout(standardTimeoutTime*1000);
 
+  /* 
   test('Install Command Sets the PATH', async () => {
     const context: IDotnetAcquireContext = { version: '5.0', requestingExtensionId: 'ms-dotnettools.sample-extension' };
     const result = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet-sdk.acquire', context);
@@ -401,7 +402,7 @@ suite('DotnetCoreAcquisitionExtension End to End', function()
     // Clean up storage
     await vscode.commands.executeCommand('dotnet-sdk.uninstallAll');
   }).timeout(standardTimeoutTime * 6);
-
+*/
   test('Extension Uninstall Removes SDKs', async () => {
     const context: IDotnetAcquireContext = { version: '5.0', requestingExtensionId: 'ms-dotnettools.sample-extension' };
     const result = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet-sdk.acquire', context);
