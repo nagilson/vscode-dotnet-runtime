@@ -25,6 +25,7 @@ if ($?) {
 }
 icacls "./vscode-dotnet-runtime-library/install scripts/dotnet-install.ps1" /grant:r "users:(RX)" /C
 icacls "./vscode-dotnet-runtime-library/install scripts/dotnet-install.sh" /grant:r "users:(RX)" /C
+icacls "./vscode-dotnet-runtime-library/distro-data/distro-support.json" /grant:r "users:(RX)" /C
 
 #################### Compile library ####################
 pushd vscode-dotnet-runtime-library
