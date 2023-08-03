@@ -16,7 +16,7 @@
 	"version": "1.6.1",
 	"publisher": "ms-dotnettools",
 	"engines": {
-		"vscode": "^1.80.0"
+		"vscode": "^1.74.0"
 	},
 	"categories": [
 		"Other"
@@ -104,11 +104,10 @@
 		"@types/mocha": "^9.0.0",
 		"@types/node": "16.11.7",
 		"@types/rimraf": "3.0.2",
-		"@types/vscode": "^1.80.0",
-		"copy-webpack-plugin": "^9.0.1",
-		"webpack": "^5.63.0",
-		"webpack-cli": "^4.9.1",
-		"ts-loader": "^9.2.6"
+		"@types/vscode": "1.74.0",
+		"copy-webpack-plugin": "9.0.1",
+		"webpack": "5.63.0",
+		"webpack-cli": "4.9.1"
 	},
 	"__metadata": {
 		"id": "1aab81a1-b3d9-4aef-976b-577d5d90fe3f",

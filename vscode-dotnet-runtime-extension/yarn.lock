@@ -219,10 +219,10 @@
     "@types/glob" "*"
     "@types/node" "*"
 
-"@types/vscode@^1.80.0":
-  "integrity" "sha1-wnIo3QYwAuDgBhG+cLBJe+qiTTk="
-  "resolved" "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public-npm/npm/registry/@types/vscode/-/vscode-1.81.0.tgz"
-  "version" "1.81.0"
+"@types/vscode@1.74.0":
+  "integrity" "sha1-StwhtOf1J7iT3jQYwhqR8eUDvc0="
+  "resolved" "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public-npm/npm/registry/@types/vscode/-/vscode-1.74.0.tgz"
+  "version" "1.74.0"
 
 "@ungap/promise-all-settled@1.1.2":
   "integrity" "sha1-qlgEJxHW4ydd033Fl+XTHowpCkQ="
@@ -755,7 +755,7 @@
   "resolved" "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public-npm/npm/registry/concat-map/-/concat-map-0.0.1.tgz"
   "version" "0.0.1"
 
-"copy-webpack-plugin@^9.0.1":
+"copy-webpack-plugin@9.0.1":
   "integrity" "sha1-tx0hmRWZ9hpO4AunkIe4uiebu1k="
   "resolved" "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public-npm/npm/registry/copy-webpack-plugin/-/copy-webpack-plugin-9.0.1.tgz"
   "version" "9.0.1"
@@ -2341,7 +2341,7 @@
     "@types/rimraf" "3.0.2"
     "@types/semver" "^7.3.9"
     "@types/shelljs" "0.8.9"
-    "@types/vscode" "^1.80.0"
+    "@types/vscode" "1.74.0"
     "@vscode/sudo-prompt" "^9.3.1"
     "chai" "4.3.4"
     "chai-as-promised" "^7.1.1"
@@ -2381,7 +2381,7 @@
     "glob-to-regexp" "^0.4.1"
     "graceful-fs" "^4.1.2"
 
-"webpack-cli@^4.9.1", "webpack-cli@4.x.x":
+"webpack-cli@4.9.1", "webpack-cli@4.x.x":
   "integrity" "sha1-tkvoJeLRsTDyhcMUyqOxuppGMrM="
   "resolved" "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public-npm/npm/registry/webpack-cli/-/webpack-cli-4.9.1.tgz"
   "version" "4.9.1"
@@ -2412,7 +2412,7 @@
   "resolved" "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public-npm/npm/registry/webpack-sources/-/webpack-sources-3.2.3.tgz"
   "version" "3.2.3"
 
-"webpack@^5.0.0", "webpack@^5.1.0", "webpack@^5.63.0", "webpack@4.x.x || 5.x.x":
+"webpack@^5.0.0", "webpack@^5.1.0", "webpack@4.x.x || 5.x.x", "webpack@5.63.0":
   "integrity" "sha1-SwdBFYAOBSbYURKYXkbGS5XgSq8="
   "resolved" "https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public-npm/npm/registry/webpack/-/webpack-5.63.0.tgz"
   "version" "5.63.0"

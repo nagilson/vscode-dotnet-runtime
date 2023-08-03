@@ -17,7 +17,6 @@ else
 fi
 chmod +x "./vscode-dotnet-runtime-library/install scripts/dotnet-install.ps1"
 chmod +x "./vscode-dotnet-runtime-library/install scripts/dotnet-install.sh"
-chmod +x "./vscode-dotnet-runtime-library/distro-data/distro-support.json"
 
 echo ""
 echo "----------- Compiling vscode-dotnet-runtime-library -----------"
