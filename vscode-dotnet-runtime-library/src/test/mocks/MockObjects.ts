@@ -17,6 +17,11 @@ import { ITelemetryReporter } from '../../EventStream/TelemetryObserver';
 import { IExistingPath, IExtensionConfiguration } from '../../IExtensionContext';
 import { IExtensionState } from '../../IExtensionState';
 import { WebRequestWorker } from '../../Utils/WebRequestWorker';
+import { ICommandExecutor } from '../../Utils/ICommandExecutor';
+import { CommandExecutor } from '../../Utils/CommandExecutor';
+import { IDistroDotnetSDKProvider } from '../../Acquisition/IDistroDotnetSDKProvider';
+import { DistroVersionPair, DotnetDistroSupportStatus } from '../../Acquisition/LinuxVersionResolver';
+import { GenericDistroSDKProvider } from '../../Acquisition/GenericDistroSDKProvider';
 /* tslint:disable:no-any */
 
 export class MockExtensionContext implements IExtensionState {
@@ -168,6 +173,138 @@ export class MockInstallScriptWorker extends InstallScriptAcquisitionWorker {
         }
     }
 }
+
+/**
+ * @remarks does NOT run the commands (if they have sudo), but records them to verify the correct command should've been run.
+ */
+export class MockCommandExecutor extends ICommandExecutor
+{
+    private trueExecutor : CommandExecutor;
+    public fakeReturnValue : string = '';
+    public attemptedCommand : string = '';
+
+    // If you expect several commands to be run and want to specify unique outputs for each, describe them in the same order using the below two arrays.
+    // We will check for an includes match and not an exact match!
+    public otherCommandsToMock : string[] = [];
+    public otherCommandsReturnValues : string[] = [];
+
+    constructor()
+    {
+        super();
+        this.trueExecutor = new CommandExecutor();
+    }
+
+    public async execute(command: string, workingDirectory : string | null = null): Promise<string[]>
+    {
+        this.attemptedCommand = command;
+        let commandResults : string[] = [];
+
+        if(!command.includes("sudo") && this.fakeReturnValue === '')
+        {
+            commandResults = await this.trueExecutor.execute(command, workingDirectory ? null : {cwd : path.resolve(workingDirectory!)});
+        }
+        else if(this.otherCommandsToMock.some(x => x.includes(command)))
+        {
+            const fakeResultIndex = this.otherCommandsToMock.findIndex(x => x.includes(command));
+            // We don't need to verify the index since this is test code!
+            commandResults.push(this.otherCommandsReturnValues[fakeResultIndex]);
+        }
+        else
+        {
+            commandResults.push(this.fakeReturnValue);
+        }
+        return commandResults;
+    }
+}
+
+/**
+ * @remarks does NOT run the commands (if they have sudo), but records them to verify the correct command should've been run.
+ */
+export class MockDistroProvider extends IDistroDotnetSDKProvider
+{
+    public installReturnValue : string = '';
+    public installedSDKsReturnValue : string[] = [];
+    public installedRuntimesReturnValue : string[] = [];
+    public globalPathReturnValue : string | null = '';
+    public globalVersionReturnValue : string | null = '';
+    public distroFeedReturnValue : string = '';
+    public microsoftFeedReturnValue : string = '';
+    public packageExistsReturnValue : boolean = false;
+    public supportStatusReturnValue : DotnetDistroSupportStatus = DotnetDistroSupportStatus.Distro;
+    public recommendedVersionReturnValue : string = '';
+    public upgradeReturnValue : string = '';
+    public uninstallReturnValue : string = '';
+
+    constructor(version : DistroVersionPair, commandRunner : ICommandExecutor)
+    {
+        super(version, commandRunner);
+    }
+
+    public installDotnet(fullySpecifiedVersion: string): Promise<string> {
+        this.commandRunner.execute('install dotnet');
+        return Promise.resolve(this.installReturnValue);
+    }
+
+    public getInstalledDotnetSDKVersions(): Promise<string[]> {
+        this.commandRunner.execute('get sdk versions');
+        return Promise.resolve(this.installedSDKsReturnValue);
+    }
+
+    public getInstalledDotnetRuntimeVersions(): Promise<string[]> {
+        this.commandRunner.execute('get runtime versions');
+        return Promise.resolve(this.installedRuntimesReturnValue);
+    }
+
+    public getInstalledGlobalDotnetPathIfExists(): Promise<string | null> {
+        this.commandRunner.execute('global path');
+        return Promise.resolve(this.globalPathReturnValue);
+    }
+
+    public getInstalledGlobalDotnetVersionIfExists(): Promise<string | null> {
+        this.commandRunner.execute('global version');
+        return Promise.resolve(this.globalVersionReturnValue);
+    }
+
+    public getExpectedDotnetDistroFeedInstallationDirectory(): Promise<string> {
+        this.commandRunner.execute('distro feed dir');
+        return Promise.resolve(this.distroFeedReturnValue);
+    }
+
+    public getExpectedDotnetMicrosoftFeedInstallationDirectory(): Promise<string> {
+        this.commandRunner.execute('microsoft feed dir');
+        return Promise.resolve(this.microsoftFeedReturnValue);
+    }
+
+    public dotnetPackageExistsOnSystem(fullySpecifiedVersion: string): Promise<boolean> {
+        this.commandRunner.execute('package check');
+        return Promise.resolve(this.packageExistsReturnValue);
+    }
+
+    public getDotnetVersionSupportStatus(fullySpecifiedVersion: string): Promise<DotnetDistroSupportStatus> {
+        this.commandRunner.execute('support status');
+        return Promise.resolve(this.supportStatusReturnValue);
+    }
+
+    public getRecommendedDotnetVersion(): string {
+        this.commandRunner.execute('recommended version');
+        return this.recommendedVersionReturnValue;
+    }
+
+    public upgradeDotnet(versionToUpgrade: string): Promise<string> {
+        this.commandRunner.execute('upgrade update dotnet');
+        return Promise.resolve(this.upgradeReturnValue);
+    }
+
+    public uninstallDotnet(versionToUninstall: string): Promise<string> {
+        this.commandRunner.execute('uninstall dotnet');
+        return Promise.resolve(this.uninstallReturnValue);
+    }
+
+    public JsonDotnetVersion(fullySpecifiedDotnetVersion: string): string {
+        return new GenericDistroSDKProvider(this.distroVersion).JsonDotnetVersion(fullySpecifiedDotnetVersion);
+    }
+}
+
 
 export class FailingInstallScriptWorker extends InstallScriptAcquisitionWorker {
     constructor(extensionState: IExtensionState, eventStream: IEventStream) {

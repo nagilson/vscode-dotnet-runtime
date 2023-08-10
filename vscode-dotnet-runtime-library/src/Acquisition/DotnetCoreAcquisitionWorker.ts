@@ -6,17 +6,17 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import rimraf = require('rimraf');
-import * as proc from 'child_process';
-import * as https from 'https';
 
 import {
     DotnetAcquisitionAlreadyInstalled,
+    DotnetAcquisitionCompleted,
     DotnetAcquisitionDeletion,
     DotnetAcquisitionInProgress,
     DotnetAcquisitionPartialInstallation,
     DotnetAcquisitionStarted,
     DotnetAcquisitionStatusResolved,
     DotnetAcquisitionStatusUndefined,
+    DotnetNonZeroInstallerExitCodeError,
     DotnetPreinstallDetected,
     DotnetPreinstallDetectionError,
     DotnetUninstallAllCompleted,
@@ -26,10 +26,10 @@ import { IDotnetAcquireResult } from '../IDotnetAcquireResult';
 import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
 import { IDotnetCoreAcquisitionWorker } from './IDotnetCoreAcquisitionWorker';
 import { IDotnetInstallationContext } from './IDotnetInstallationContext';
-import { GlobalSDKInstallerResolver } from './GlobalSDKInstallerResolver';
-import { createSemanticDiagnosticsBuilderProgram } from 'typescript';
-import { FileUtilities } from '../Utils/FileUtilities';
-import { WebRequestWorker } from '../Utils/WebRequestWorker';
+import { GlobalInstallerResolver } from './GlobalInstallerResolver';
+import { WinMacGlobalInstaller } from './WinMacGlobalInstaller';
+import { IGlobalInstaller } from './IGlobalInstaller';
+import { LinuxGlobalInstaller } from './LinuxGlobalInstaller';
 
 export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker {
     private readonly installingVersionsKey = 'installing';
@@ -68,7 +68,7 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
         return this.acquire(version, false);
     }
 
-    public async acquireGlobalSDK(installerResolver: GlobalSDKInstallerResolver): Promise<IDotnetAcquireResult>
+    public async acquireGlobalSDK(installerResolver: GlobalInstallerResolver): Promise<IDotnetAcquireResult>
     {
         return this.acquire(await installerResolver.getFullVersion(), false, installerResolver);
     }
@@ -119,7 +119,7 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
      * @param global false for local install, true for global SDK installs.
      * @returns the dotnet acqusition result.
      */
-    private async acquire(version: string, installRuntime: boolean, globalInstallerResolver : GlobalSDKInstallerResolver | null = null): Promise<IDotnetAcquireResult> {
+    private async acquire(version: string, installRuntime: boolean, globalInstallerResolver : GlobalInstallerResolver | null = null): Promise<IDotnetAcquireResult> {
         const existingAcquisitionPromise = this.acquisitionPromises[version];
         if (existingAcquisitionPromise)
         {
@@ -162,20 +162,10 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
      * @remarks it is called "core" because it is the meat of the actual acquisition work; this has nothing to do with .NET core vs framework.
      */
     private async acquireCore(version: string, installRuntime: boolean): Promise<string> {
-        const installingVersions = this.context.extensionState.get<string[]>(this.installingVersionsKey, []);
+
+        this.checkForPartialInstalls(version, installRuntime, !installRuntime);
+
         let installedVersions = this.context.extensionState.get<string[]>(this.installedVersionsKey, []);
-        const partialInstall = installingVersions.indexOf(version) >= 0;
-        if (partialInstall && installRuntime) {
-            // Partial install, we never updated our extension to no longer be 'installing'.
-            // uninstall everything and then re-install.
-            this.context.eventStream.post(new DotnetAcquisitionPartialInstallation(version));
-
-            await this.uninstallRuntime(version);
-        } else if (partialInstall) {
-            this.context.eventStream.post(new DotnetAcquisitionPartialInstallation(version));
-            await this.uninstallAll();
-        }
-
         const dotnetInstallDir = this.context.installDirectoryProvider.getInstallDir(version);
         const dotnetPath = path.join(dotnetInstallDir, this.dotnetExecutable);
 
@@ -213,38 +203,61 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
         return dotnetPath;
     }
 
-    private async acquireGlobalCore(globalInstallerResolver : GlobalSDKInstallerResolver): Promise<string>
+    private async checkForPartialInstalls(version : string, uninstallLocalRuntime : boolean, uninstallLocalSDK : boolean)
     {
-        const conflictingVersion = await globalInstallerResolver.GlobalInstallWithConflictingVersionAlreadyExists()
-        if (conflictingVersion !== '')
+        const installingVersions = this.context.extensionState.get<string[]>(this.installingVersionsKey, []);
+        const partialInstall = installingVersions.indexOf(version) >= 0;
+        if (partialInstall)
         {
-            throw Error(`An global install is already on the machine with a version that conflicts with the requested version.`)
+            // Partial install, we never updated our extension to no longer be 'installing'.
+            this.context.eventStream.post(new DotnetAcquisitionPartialInstallation(version));
+
+            // Uninstall everything so we can re-install. For global installs, let the installer handle it.
+            if(uninstallLocalRuntime)
+            {
+                await this.uninstallAll();
+            }
+            else if(uninstallLocalSDK)
+            {
+                await this.uninstallRuntime(version);
+            }
+        }
+    }
+
+    private async acquireGlobalCore(globalInstallerResolver : GlobalInstallerResolver): Promise<string>
+    {
+        // TODO report installer OK if conflicting exists and check running installer return code
+        const installingVersion = await globalInstallerResolver.getFullVersion();
+        this.checkForPartialInstalls(installingVersion, false, false);
+
+        let installer : IGlobalInstaller = os.platform() === 'linux' ? new LinuxGlobalInstaller(this.context, installingVersion) : new WinMacGlobalInstaller(this.context, installingVersion, await globalInstallerResolver.getInstallerUrl());
+
+        // Indicate that we're beginning to do the install.
+        await this.addVersionToExtensionState(this.installingVersionsKey, installingVersion);
+        this.context.eventStream.post(new DotnetAcquisitionStarted(installingVersion));
+
+        // See if we should return a fake path instead of running the install
+        if(process.env.VSCODE_DOTNET_GLOBAL_INSTALL_FAKE_PATH && process.env.VSCODE_DOTNET_GLOBAL_INSTALL_FAKE_PATH === 'true')
+        {
+            return 'fake-sdk';
         }
 
-        // TODO fix handling with empty input split
-        // TODO check if theres a partial install from the extension if that can happen
-        // TODO fix registry check
-        // TODO report installer OK if conflicting exists
+        const installerResult = await installer.installSDK();
 
-        const installerUrl : string = await globalInstallerResolver.getInstallerUrl();
-        const installerFile : string = await this.downloadInstallerOnMachine(installerUrl);
-
-        const installingVersion = await globalInstallerResolver.getFullVersion();
-        await this.addVersionToExtensionState(this.installingVersionsKey, installingVersion);
-
-        this.context.eventStream.post(new DotnetAcquisitionStarted(installingVersion));
-        const installerResult : string = await this.executeInstaller(installerFile);
         if(installerResult !== '0')
         {
-            // TODO handle this.
+            const err = new DotnetNonZeroInstallerExitCodeError(new Error(`An error was raised by the .NET SDK installer. The exit code it gave us: ${installerResult}`));
+            this.context.eventStream.post(err);
+            throw err;
         }
-        const installedSDKPath : string = this.getGloballyInstalledSDKPath(await globalInstallerResolver.getFullVersion(), os.arch());
-        this.wipeDirectory(path.dirname(installerFile));
 
-        // TODO: Add exe to path.
-        //this.context.installationValidator.validateDotnetInstall(installingVersion, installedSDKPath);
+        const installedSDKPath : string = await installer.getExpectedGlobalSDKPath(await globalInstallerResolver.getFullVersion(), os.arch());
 
-        // TODO see if the below is needed
+        this.context.installationValidator.validateDotnetInstall(installingVersion, installedSDKPath);
+
+        this.context.eventStream.post(new DotnetAcquisitionCompleted(installingVersion, installedSDKPath));
+
+        // Remove the indication that we're installing and replace it notifying of the real installation completion.
         await this.removeVersionFromExtensionState(this.installingVersionsKey, installingVersion);
         await this.addVersionToExtensionState(this.installedVersionsKey, installingVersion);
 
@@ -298,171 +311,6 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
         return installedVersions;
     }
 
-    /**
-     *
-     * @param installerUrl the url of the installer to download.
-     * @returns the path to the installer which was downloaded into a directory managed by us.
-     */
-    private async downloadInstallerOnMachine(installerUrl : string) : Promise<string>
-    {
-        const ourInstallerDownloadFolder = DotnetCoreAcquisitionWorker.getInstallerDownloadFolder();
-        this.wipeDirectory(ourInstallerDownloadFolder);
-        const installerPath = path.join(ourInstallerDownloadFolder, `${installerUrl.split('/').slice(-1)}`);
-        await this.download(installerUrl, installerPath);
-        return installerPath;
-    }
 
-    private async download(url : string, dest : string) {
-        return new Promise<void>((resolve, reject) => {
-
-            const installerDir = path.dirname(dest);
-            if (!fs.existsSync(installerDir)){
-                fs.mkdirSync(installerDir);
-            }
-            const file = fs.createWriteStream(dest, { flags: "wx" });
-
-            const request = https.get(url, response => {
-                if (response.statusCode === 200) {
-                    response.pipe(file);
-                } else {
-                    file.close();
-                    fs.unlink(dest, () => {}); // Delete temp file
-                    reject(`Server responded with ${response.statusCode}: ${response.statusMessage}`);
-                }
-            });
-
-            request.on("error", err => {
-                file.close();
-                fs.unlink(dest, () => {}); // Delete temp file
-                reject(err.message);
-            });
-
-            file.on("finish", () => {
-                resolve();
-            });
-
-            file.on("error", err => {
-                file.close();
-
-                if (err.message === "EEXIST")
-                {
-                    reject("File already exists");
-                }
-                else
-                {
-                    fs.unlink(dest, () => {}); // Delete temp file
-                    reject(err.message);
-                }
-            });
-        });
-    }
-
-    /**
-     *
-     * @returns true if the process is running with admin privelleges on windows.
-     */
-    public static isElevated() : boolean
-    {
-        if(os.platform() !== 'win32')
-        {
-            // TODO: Make sure this works on mac and linux.
-            const commandResult = proc.spawnSync("id", ["-u"]);
-            return commandResult.status === 0;
-        }
-
-        try
-        {
-            // If we can execute this command on Windows then we have admin rights.
-            proc.execFileSync( "net", ["session"], { "stdio": "ignore" } );
-            return true;
-        }
-        catch ( error )
-        {
-            return false;
-        }
-    }
-
-    private getGloballyInstalledSDKPath(specificSDKVersionInstalled : string, installedArch : string) : string
-    {
-        if(os.platform() === 'win32')
-        {
-            if(installedArch === 'x32')
-            {
-                return path.join(`C:\\Program Files (x86)\\dotnet\\sdk\\`, specificSDKVersionInstalled);
-            }
-            else if(installedArch === 'x64')
-            {
-                return path.join(`C:\\Program Files\\dotnet\\sdk\\`, specificSDKVersionInstalled);
-            }
-        }
-        else if(os.platform() === 'darwin')
-        {
-            if(installedArch !== 'x64')
-            {
-                return path.join(`/usr/local/share/dotnet/sdk`, specificSDKVersionInstalled);
-            }
-            else
-            {
-                // We only know this to be correct in the ARM scenarios but I decided to assume the default is the same elsewhere.
-                return path.join(`/usr/local/share/dotnet/x64/dotnet/sdk`, specificSDKVersionInstalled);
-            }
-        }
-
-        // TODO Add code for linux: it should be root. Check security of returning this
-        return '';
-    }
-
-    /**
-     *
-     * @param directoryToWipe the directory to delete all of the files in if privellege to do so exists.
-     */
-    private wipeDirectory(directoryToWipe : string)
-    {
-        fs.readdir(directoryToWipe, (err, files) => {
-            if (err) throw err;
-
-            for (const file of files) {
-              fs.unlink(path.join(directoryToWipe, file), (err) => {
-                if (err) throw err;
-              });
-            }
-          });
-    }
-
-    /**
-     *
-     * @returns The folder where global sdk installers will be downloaded onto the disk.
-     */
-    public static getInstallerDownloadFolder() : string
-    {
-        return path.join(__dirname, 'installers');
-    }
-
-    /**
-     *
-     * @param installerPath The path to the installer file to run.
-     * @returns The exit result from running the global install.
-     */
-    private async executeInstaller(installerPath : string) : Promise<string>
-    {
-        if(os.platform() === 'darwin')
-        {
-            // For Mac:
-            // We don't rely on the installer because it doesn't allow us to run without sudo, and we don't want to handle the user password.
-            // The -W flag makes it so we wait for the installer .pkg to exit, though we are unable to get the exit code.
-            const commandResult = proc.spawnSync('open', ['-W', `${path.resolve(installerPath)}`]);
-            return commandResult.toString();
-        }
-
-        try
-        {
-            const commandResult = proc.spawnSync(`${path.resolve(installerPath)}`, DotnetCoreAcquisitionWorker.isElevated() ? ['/quiet', '/install', '/norestart'] : []);
-            return commandResult.toString();
-        }
-        catch(error : any)
-        {
-            return error;
-        }
-    }
 }
 

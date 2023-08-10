@@ -99,7 +99,11 @@ export class DotnetCommandFailed extends DotnetAcquisitionError {
             CommandName : this.command,
             ErrorName : this.error.name,
             StackTrace : this.error.stack ? this.error.stack : ''};
+        }
     }
+
+export class DotnetWSLSecurityError extends DotnetAcquisitionError {
+        public readonly eventName = 'DotnetWSLSecurityError';
 }
 
 export abstract class DotnetAcquisitionVersionError extends DotnetAcquisitionError {
@@ -112,8 +116,8 @@ export abstract class DotnetAcquisitionVersionError extends DotnetAcquisitionErr
             AcquisitionErrorVersion : this.version,
             ErrorName : this.error.name,
             StackTrace : this.error.stack ? this.error.stack : ''};
+        }
     }
-}
 
 export class DotnetAcquisitionUnexpectedError extends DotnetAcquisitionVersionError {
     public readonly eventName = 'DotnetAcquisitionUnexpectedError';
@@ -125,6 +129,14 @@ export class DotnetAcquisitionInstallError extends DotnetAcquisitionVersionError
 
 export class DotnetAcquisitionScriptError extends DotnetAcquisitionVersionError {
     public readonly eventName = 'DotnetAcquisitionScriptError';
+}
+
+export class DotnetConflictingGlobalWindowsInstallError extends DotnetAcquisitionError {
+    public readonly eventName = 'DotnetConflictingGlobalWindowsInstallError';
+}
+
+export class DotnetNonZeroInstallerExitCodeError extends DotnetAcquisitionError {
+    public readonly eventName = 'DotnetNonZeroInstallerExitCodeError';
 }
 
 export class DotnetOfflineFailure extends DotnetAcquisitionVersionError {
@@ -149,6 +161,19 @@ export class DotnetAcquisitionTimeoutError extends DotnetAcquisitionVersionError
 
 export class DotnetVersionResolutionError extends DotnetAcquisitionVersionError {
     public readonly eventName = 'DotnetVersionResolutionError';
+}
+
+export class DotnetConflictingLinuxInstallTypesError extends DotnetAcquisitionVersionError {
+    public readonly eventName = 'DotnetConflictingLinuxInstallTypesError';
+}
+
+export class DotnetCustomLinuxInstallExistsError extends DotnetAcquisitionVersionError {
+    public readonly eventName = 'DotnetCustomLinuxInstallExistsError';
+}
+
+
+export class DotnetUnknownDistroError extends DotnetAcquisitionVersionError {
+    public readonly eventName = 'DotnetUnknownDistroError';
 }
 
 export class DotnetInstallationValidationError extends DotnetAcquisitionVersionError {
@@ -187,6 +212,17 @@ export class DotnetInstallationValidationError extends DotnetAcquisitionVersionE
         return relativeFiles.join('\n');
     }
 }
+
+export class DotnetAcquisitionDistroUnknownError extends DotnetAcquisitionError {
+    public readonly eventName = 'DotnetAcquisitionDistroUnknownError';
+
+    public getProperties(telemetry = false): { [key: string]: string } | undefined {
+        return {ErrorMessage : this.error.message,
+            ErrorName : this.error.name,
+            StackTrace : this.error.stack ? this.error.stack : ''};
+    }
+}
+
 
 export abstract class DotnetAcquisitionSuccessEvent extends IEvent {
     public readonly type = EventType.DotnetAcquisitionSuccessEvent;
