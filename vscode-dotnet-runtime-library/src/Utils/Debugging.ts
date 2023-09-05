@@ -45,9 +45,5 @@ export class Debugging
                 file.write(message);
             }
         }
-        else
-        {
-            ; // do nothing to appease ansync?
-        }
     }
 };

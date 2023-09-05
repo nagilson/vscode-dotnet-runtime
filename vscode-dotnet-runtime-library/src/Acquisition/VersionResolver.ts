@@ -21,6 +21,8 @@ import { DotnetVersionSupportPhase,
     IDotnetVersion
 } from '../IDotnetListVersionsContext';
 import { Debugging } from '../Utils/Debugging';
+/* tslint:disable:no-any */
+
 
 export class VersionResolver implements IVersionResolver {
     protected webWorker: WebRequestWorker;
@@ -29,10 +31,11 @@ export class VersionResolver implements IVersionResolver {
 
     constructor(extensionState: IExtensionState,
                 private readonly eventStream: IEventStream,
+                private readonly timeoutTime : number,
                 webWorker?: WebRequestWorker
     )
     {
-        this.webWorker = webWorker ?? new WebRequestWorker(extensionState, eventStream);
+        this.webWorker = webWorker ?? new WebRequestWorker(extensionState, eventStream, this.releasesUrl, this.timeoutTime * 1000);
     }
 
     /**
@@ -55,7 +58,7 @@ export class VersionResolver implements IVersionResolver {
         const shouldObtainSdkVersions : boolean = !commandContext?.listRuntimes;
         const availableVersions : IDotnetListVersionsResult = [];
 
-        const response = await this.webWorker.getCachedData(this.releasesUrl);
+        const response : any = await this.webWorker.getCachedData();
 
 
         return new Promise<IDotnetListVersionsResult>((resolve, reject) =>
@@ -68,7 +71,7 @@ export class VersionResolver implements IVersionResolver {
             }
             else
             {
-                const sdkDetailsJson = JSON.parse(response)['releases-index'];
+                const sdkDetailsJson = response['releases-index'];
 
                 for(const availableSdk of sdkDetailsJson)
                 {

@@ -63,7 +63,7 @@ namespace commandKeys {
 const commandPrefix = 'dotnet-sdk';
 const configPrefix = 'dotnetSDKAcquisitionExtension';
 const displayChannelName = '.NET SDK';
-const defaultTimeoutValue = 300;
+const defaultTimeoutValue = 600;
 const pathTroubleshootingOption = 'Troubleshoot';
 const troubleshootingUrl = 'https://github.com/dotnet/vscode-dotnet-runtime/blob/main/Documentation/troubleshooting-sdk.md';
 const knownExtensionIds = ['ms-dotnettools.sample-extension', 'ms-dotnettools.vscode-dotnet-pack'];
@@ -101,6 +101,7 @@ export function activate(context: vscode.ExtensionContext, extensionContext?: IE
     };
 
     const timeoutValue = extensionConfiguration.get<number>(configKeys.installTimeoutValue);
+    const resolvedTimeoutSeconds = timeoutValue === undefined ? defaultTimeoutValue : timeoutValue;
     let storagePath: string;
     if (os.platform() === 'win32') {
         // Install to %AppData% on windows to avoid running into long path errors
@@ -116,20 +117,20 @@ export function activate(context: vscode.ExtensionContext, extensionContext?: IE
         storagePath,
         extensionState: context.globalState,
         eventStream,
-        acquisitionInvoker: new AcquisitionInvoker(context.globalState, eventStream),
+        acquisitionInvoker: new AcquisitionInvoker(context.globalState, eventStream, resolvedTimeoutSeconds),
         installationValidator: new InstallationValidator(eventStream),
-        timeoutValue: timeoutValue === undefined ? defaultTimeoutValue : timeoutValue,
+        timeoutValue: resolvedTimeoutSeconds,
         installDirectoryProvider: new SdkInstallationDirectoryProvider(storagePath),
         acquisitionContext : null
     });
 
-    const versionResolver = new VersionResolver(context.globalState, eventStream);
+    const versionResolver = new VersionResolver(context.globalState, eventStream, resolvedTimeoutSeconds);
 
     const getAvailableVersions = async (commandContext: IDotnetListVersionsContext | undefined, customWebWorker: WebRequestWorker | undefined) : Promise<IDotnetListVersionsResult | undefined> =>
     {
 
         const versionsResult = await callWithErrorHandling(async () => {
-            const customVersionResolver = new VersionResolver(context.globalState, eventStream, customWebWorker);
+            const customVersionResolver = new VersionResolver(context.globalState, eventStream, resolvedTimeoutSeconds, customWebWorker);
             return customVersionResolver.GetAvailableDotnetVersions(commandContext);
         }, issueContext(commandContext?.errorConfiguration, 'listVersions'));
 
@@ -149,8 +150,8 @@ export function activate(context: vscode.ExtensionContext, extensionContext?: IE
         }
 
         const pathResult = callWithErrorHandling(async () => {
-            Debugging.log(`Beginning Acquisition.`, eventStream);
-            eventStream.post(new DotnetSDKAcquisitionStarted());
+            eventStream.post(new DotnetSDKAcquisitionStarted(commandContext.requestingExtensionId));
+
             eventStream.post(new DotnetAcquisitionRequested(commandContext.version, commandContext.requestingExtensionId));
             acquisitionWorker.setAcquisitionContext(commandContext);
             if(commandContext.installType === 'global')
