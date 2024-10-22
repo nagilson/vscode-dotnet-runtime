@@ -9,8 +9,20 @@
         "HKCU",
         "HKEY",
         "norestart",
+        "proccom",
         "programfiles",
         "REGHEXVALUE",
-        "REGTYPE"
-    ]
+        "REGTYPE",
+        "Republisher"
+    ],
+    "azure-pipelines.1ESPipelineTemplatesSchemaFile": true,
+    "eslint.options": {
+        "configFile": ".eslintrc.js"
+    },
+    "eslint.workingDirectories": [
+        "./vscode-dotnet-runtime-library",
+        "./vscode-dotnet-runtime-extension",
+        "./vscode-dotnet-sdk-extension",
+        "./sample"
+      ]
 }

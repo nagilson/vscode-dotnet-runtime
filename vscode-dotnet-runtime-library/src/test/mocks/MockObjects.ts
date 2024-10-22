@@ -5,37 +5,42 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { IAcquisitionInvoker } from '../../Acquisition/IAcquisitionInvoker';
-import { IDotnetInstallationContext } from '../../Acquisition/IDotnetInstallationContext';
-import { IInstallationValidator } from '../../Acquisition/IInstallationValidator';
 import { InstallScriptAcquisitionWorker } from '../../Acquisition/InstallScriptAcquisitionWorker';
 import { VersionResolver } from '../../Acquisition/VersionResolver';
-import { IEventStream } from '../../EventStream/EventStream';
 import { DotnetCoreAcquisitionWorker } from '../../Acquisition/DotnetCoreAcquisitionWorker';
-import { DotnetAcquisitionCompleted, TestAcquireCalled } from '../../EventStream/EventStreamEvents';
-import { IEvent } from '../../EventStream/IEvent';
-import { ILoggingObserver } from '../../EventStream/ILoggingObserver';
-import { ITelemetryReporter } from '../../EventStream/TelemetryObserver';
-import { IExistingPath, IExtensionConfiguration } from '../../IExtensionContext';
-import { IExtensionState } from '../../IExtensionState';
+import { DotnetAcquisitionCompleted, EventBasedError, TestAcquireCalled } from '../../EventStream/EventStreamEvents';
+import { IExistingPaths, IExtensionConfiguration, ILocalExistingPath } from '../../IExtensionContext';
+import { FileUtilities } from '../../Utils/FileUtilities';
 import { WebRequestWorker } from '../../Utils/WebRequestWorker';
-import { CommandExecutorCommand, ICommandExecutor } from '../../Utils/ICommandExecutor';
 import { CommandExecutor } from '../../Utils/CommandExecutor';
 import { AcquisitionInvoker } from '../../Acquisition/AcquisitionInvoker';
-import { LinuxInstallType } from '../../Acquisition/LinuxInstallType';
+import { DotnetInstallMode } from '../../Acquisition/DotnetInstallMode';
 import { GenericDistroSDKProvider } from '../../Acquisition/GenericDistroSDKProvider';
 import { getMockUtilityContext } from '../unit/TestUtility';
 import { DistroVersionPair, DotnetDistroSupportStatus } from '../../Acquisition/LinuxVersionResolver';
+import { CommandExecutorCommand } from '../../Utils/CommandExecutorCommand';
+import { IAcquisitionInvoker } from '../../Acquisition/IAcquisitionInvoker';
+import { ICommandExecutor } from '../../Utils/ICommandExecutor';
+import { IEvent } from '../../EventStream/IEvent';
+import { IEventStream } from '../../EventStream/EventStream';
+import { IExtensionState } from '../../IExtensionState';
+import { IDotnetInstallationContext } from '../../Acquisition/IDotnetInstallationContext';
+import { IInstallationValidator } from '../../Acquisition/IInstallationValidator';
 import { IDistroDotnetSDKProvider } from '../../Acquisition/IDistroDotnetSDKProvider';
+import { ILoggingObserver } from '../../EventStream/ILoggingObserver';
 import { IAcquisitionWorkerContext } from '../../Acquisition/IAcquisitionWorkerContext';
-import { FileUtilities } from '../../Utils/FileUtilities';
 import { IFileUtilities } from '../../Utils/IFileUtilities';
 import { IVSCodeExtensionContext } from '../../IVSCodeExtensionContext';
+import { ITelemetryReporter } from '../../EventStream/TelemetryObserver';
 import { IUtilityContext } from '../../Utils/IUtilityContext';
 import { IVSCodeEnvironment } from '../../Utils/IVSCodeEnvironment';
+import { GetDotnetInstallInfo } from '../../Acquisition/DotnetInstall';
+import { DotnetInstall } from '../../Acquisition/DotnetInstall';
+import { InstallTrackerSingleton } from '../../Acquisition/InstallTrackerSingleton';
+import { InstallationGraveyard } from '../../Acquisition/InstallationGraveyard';
+import { CommandExecutorResult } from '../../Utils/CommandExecutorResult';
 
 const testDefaultTimeoutTimeMs = 60000;
-/* tslint:disable:no-any */
 
 export class MockExtensionContext implements IExtensionState {
     private values: { [n: string]: any; } = {};
@@ -71,20 +76,38 @@ export class NoInstallAcquisitionInvoker extends IAcquisitionInvoker {
     public installDotnet(installContext: IDotnetInstallationContext): Promise<void> {
         return new Promise<void>((resolve, reject) => {
             this.eventStream.post(new TestAcquireCalled(installContext));
+            const install = GetDotnetInstallInfo(installContext.version, installContext.installMode, 'local', installContext.architecture)
             this.eventStream.post(new DotnetAcquisitionCompleted(
-                DotnetCoreAcquisitionWorker.getInstallKeyCustomArchitecture(installContext.version, installContext.architecture),
-                installContext.dotnetPath, installContext.version));
+                install, installContext.dotnetPath, installContext.version));
             resolve();
 
         });
     }
+
+    constructor(eventStream : IEventStream, worker : MockDotnetCoreAcquisitionWorker)
+    {
+        super(eventStream);
+        worker.enableNoInstallInvoker();
+    }
+
 }
 
 export class MockDotnetCoreAcquisitionWorker extends DotnetCoreAcquisitionWorker
 {
-    public AddToGraveyard(installKey : string, installPath : string)
+
+    public constructor(utilityContext : IUtilityContext, extensionContext : IVSCodeExtensionContext)
     {
-        this.updateGraveyard(installKey, installPath);
+        super(utilityContext, extensionContext);
+    }
+
+    public AddToGraveyard(context: IAcquisitionWorkerContext, install : DotnetInstall, installPath : string)
+    {
+        new InstallationGraveyard(context).add(install, installPath);
+    }
+
+    public enableNoInstallInvoker()
+    {
+        this.usingNoInstallInvoker = true;
     }
 }
 
@@ -98,7 +121,7 @@ export class RejectingAcquisitionInvoker extends IAcquisitionInvoker {
 
 export class ErrorAcquisitionInvoker extends IAcquisitionInvoker {
     public installDotnet(installContext: IDotnetInstallationContext): Promise<void> {
-        throw new Error('Command Failed');
+        throw new EventBasedError('MockErrorAcquisitionInvokerFailure', 'Command Failed');
     }
 }
 
@@ -106,9 +129,8 @@ export class ErrorAcquisitionInvoker extends IAcquisitionInvoker {
 export const versionPairs = [['1.0', '1.0.16'], ['1.1', '1.1.13'], ['2.0', '2.0.9'], ['2.1', '2.1.14'], ['2.2', '2.2.8']];
 
 export class FileWebRequestWorker extends WebRequestWorker {
-    constructor(extensionState: IExtensionState, eventStream: IEventStream, uri: string, extensionStateKey: string,
-                private readonly mockFilePath: string) {
-        super(extensionState, eventStream, uri, testDefaultTimeoutTimeMs);
+    constructor(ctx : IAcquisitionWorkerContext, uri: string,  private readonly mockFilePath: string) {
+        super(ctx, uri);
     }
 
     protected async makeWebRequest(): Promise<string | undefined> {
@@ -118,8 +140,8 @@ export class FileWebRequestWorker extends WebRequestWorker {
 }
 
 export class FailingWebRequestWorker extends WebRequestWorker {
-    constructor(extensionState: IExtensionState, eventStream: IEventStream, uri: string) {
-        super(extensionState, eventStream, '', testDefaultTimeoutTimeMs); // Empty string as uri to cause failure. Uri is required to match the interface even though it's unused.
+    constructor(ctx : IAcquisitionWorkerContext, uri: string) {
+        super(ctx, '', testDefaultTimeoutTimeMs); // Empty string as uri to cause failure. Uri is required to match the interface even though it's unused.
     }
 
     public async getCachedData(): Promise<string | undefined> {
@@ -131,10 +153,10 @@ export class MockTrackingWebRequestWorker extends WebRequestWorker {
     private requestCount = 0;
     public response = 'Mock Web Request Result';
 
-    constructor(extensionState: IExtensionState, eventStream: IEventStream, url: string,
+    constructor(ctx : IAcquisitionWorkerContext, url: string,
             protected readonly succeed = true, webTimeToLive = testDefaultTimeoutTimeMs, cacheTimeToLive = testDefaultTimeoutTimeMs)
     {
-        super(extensionState, eventStream, url, webTimeToLive, '', cacheTimeToLive);
+        super(ctx, url, cacheTimeToLive);
     }
 
     public getRequestCount() {
@@ -157,8 +179,8 @@ export class MockWebRequestWorker extends MockTrackingWebRequestWorker {
     public readonly errorMessage = 'Web Request Failed';
     public response = 'Mock Web Request Result';
 
-    constructor(extensionState: IExtensionState, eventStream: IEventStream, url: string) {
-        super(extensionState, eventStream, url);
+    constructor(ctx : IAcquisitionWorkerContext, url: string) {
+        super(ctx, url);
     }
 
     protected async makeWebRequest(): Promise<string | undefined> {
@@ -184,10 +206,10 @@ export class MockIndexWebRequestWorker extends WebRequestWorker {
         ``
     ];
 
-    constructor(extensionState: IExtensionState, eventStream: IEventStream, url: string,
+    constructor(ctx : IAcquisitionWorkerContext, url: string,
         protected readonly succeed = true, webTimeToLive = testDefaultTimeoutTimeMs, cacheTimeToLive = testDefaultTimeoutTimeMs)
     {
-            super(extensionState, eventStream, url, webTimeToLive, '', cacheTimeToLive);
+            super(ctx, url, cacheTimeToLive);
     }
 
     public async getCachedData(retriesCount = 2): Promise<string | undefined>
@@ -204,6 +226,19 @@ export class MockIndexWebRequestWorker extends WebRequestWorker {
 
 export class MockVSCodeExtensionContext extends IVSCodeExtensionContext
 {
+    registerOnExtensionChange<A extends any[], R>(f: (...args: A) => R, ...args: A): void {
+        f(...args);
+    }
+
+    getExtensions(): readonly any[]
+    {
+        return [{ extensionId : 'test'}];
+    }
+
+    executeCommand(command: string, ...args: any[]): Thenable<any> {
+       return Promise.resolve({});
+    }
+
     appendToEnvironmentVariable(variable: string, pathAdditionWithDelimiter: string): void {
         // Do nothing.
     }
@@ -224,18 +259,18 @@ export class MockVSCodeEnvironment extends IVSCodeEnvironment
 export class MockVersionResolver extends VersionResolver {
     private readonly filePath = path.join(__dirname, '../../..', 'src', 'test', 'mocks', 'mock-releases.json');
 
-    constructor(extensionState: IExtensionState, eventStream: IEventStream) {
-        super(extensionState, eventStream, testDefaultTimeoutTimeMs);
-        this.webWorker = new FileWebRequestWorker(extensionState, eventStream, '', 'releases', this.filePath);
+    constructor(ctx : IAcquisitionWorkerContext) {
+        super(ctx);
+        this.webWorker = new FileWebRequestWorker(ctx, 'releases', this.filePath);
     }
 }
 
 export class MockInstallScriptWorker extends InstallScriptAcquisitionWorker {
-    constructor(extensionState: IExtensionState, eventStream: IEventStream, failing: boolean, private fallback = false) {
-        super(extensionState, eventStream, testDefaultTimeoutTimeMs);
+    constructor(ctx : IAcquisitionWorkerContext, failing: boolean, private fallback = false) {
+        super(ctx);
         this.webWorker = failing ?
-            new FailingWebRequestWorker(extensionState, eventStream, '') :
-            new MockWebRequestWorker(extensionState, eventStream, '');
+            new FailingWebRequestWorker(ctx, '') :
+            new MockWebRequestWorker(ctx, '');
     }
 
     protected getFallbackScriptPath(): string {
@@ -250,8 +285,8 @@ export class MockInstallScriptWorker extends InstallScriptAcquisitionWorker {
 export class MockApostropheScriptAcquisitionWorker extends MockInstallScriptWorker
 {
     protected readonly scriptFilePath: string;
-    constructor(extensionState: IExtensionState, eventStream: IEventStream, installFolder: string) {
-        super(extensionState, eventStream, false);
+    constructor(ctx : IAcquisitionWorkerContext, installFolder: string) {
+        super(ctx, false);
         const scriptFileEnding = 'win32';
         const scriptFileName = 'dotnet-install';
         this.scriptFilePath = path.join(installFolder, 'install scripts', `${scriptFileName}.${scriptFileEnding}`);
@@ -262,9 +297,9 @@ export class MockApostropheScriptAcquisitionWorker extends MockInstallScriptWork
 export class MockAcquisitionInvoker extends AcquisitionInvoker
 {
     protected readonly scriptWorker: MockApostropheScriptAcquisitionWorker
-    constructor(extensionState: IExtensionState, eventStream: IEventStream, timeoutTime : number, installFolder : string) {
-        super(extensionState, eventStream, timeoutTime, getMockUtilityContext());
-        this.scriptWorker = new MockApostropheScriptAcquisitionWorker(extensionState, eventStream, installFolder);
+    constructor(ctx : IAcquisitionWorkerContext, installFolder : string) {
+        super(ctx, getMockUtilityContext());
+        this.scriptWorker = new MockApostropheScriptAcquisitionWorker(ctx, installFolder);
     }
 }
 
@@ -274,41 +309,43 @@ export class MockAcquisitionInvoker extends AcquisitionInvoker
 export class MockCommandExecutor extends ICommandExecutor
 {
     private trueExecutor : CommandExecutor;
-    public fakeReturnValue = '';
+    public fakeReturnValue = {status: '', stderr: '', stdout: ''};
     public attemptedCommand = '';
 
     // If you expect several commands to be run and want to specify unique outputs for each, describe them in the same order using the below two arrays.
     // We will check for an includes match and not an exact match!
-    public otherCommandsToMock : string[] = [];
-    public otherCommandsReturnValues : string[] = [];
+    public otherCommandPatternsToMock : string[] = [];
+    public otherCommandsReturnValues : CommandExecutorResult[] = [];
 
-    constructor(eventStream : IEventStream, utilContext : IUtilityContext)
+    constructor(acquisitionContext : IAcquisitionWorkerContext, utilContext : IUtilityContext)
     {
-        super(eventStream, utilContext);
-        this.trueExecutor = new CommandExecutor(eventStream, utilContext);
+        super(acquisitionContext, utilContext);
+        this.trueExecutor = new CommandExecutor(acquisitionContext, utilContext);
     }
 
-    public async execute(command: CommandExecutorCommand, options : object | null = null, terminalFailure? : boolean): Promise<string>
+    public async execute(command: CommandExecutorCommand, options : object | null = null, terminalFailure? : boolean): Promise<CommandExecutorResult>
     {
         this.attemptedCommand = CommandExecutor.prettifyCommandExecutorCommand(command);
 
-        if(!command.runUnderSudo && this.fakeReturnValue === '')
+        if(this.shouldActuallyExecuteCommand(command))
         {
             return this.trueExecutor.execute(command, options);
         }
-        else if(this.otherCommandsToMock.some(x => x.includes(command.commandRoot)))
+
+        for(let i = 0; i < this.otherCommandPatternsToMock.length; ++i)
         {
-            const fakeResultIndex = this.otherCommandsToMock.findIndex(x => x.includes(command.commandRoot));
-            // We don't need to verify the index since this is test code!
-            return this.otherCommandsReturnValues[fakeResultIndex];
+            const commandPatternToLookFor = this.otherCommandPatternsToMock[i];
+            if(command.commandRoot.includes(commandPatternToLookFor) ||
+                command.commandParts.some((arg) => arg.includes(commandPatternToLookFor)))
+            {
+                return this.otherCommandsReturnValues[i];
+            }
         }
-        else
-        {
-            return this.fakeReturnValue;
-        }
+
+        return this.fakeReturnValue;
     }
 
-    public async executeMultipleCommands(commands: CommandExecutorCommand[], options?: any, terminalFailure? : boolean): Promise<string[]>
+    public async executeMultipleCommands(commands: CommandExecutorCommand[], options?: any, terminalFailure? : boolean): Promise<CommandExecutorResult[]>
     {
         const result = [];
         for(const command of commands)
@@ -321,20 +358,42 @@ export class MockCommandExecutor extends ICommandExecutor
     public async tryFindWorkingCommand(commands: CommandExecutorCommand[]): Promise<CommandExecutorCommand> {
         return commands[0];
     }
+
+    /**
+     * @remarks For commands which do not edit the global system state or we don't need to mock their data, we can just execute them
+     * with a real command executor to provide better code coverage.
+     */
+    private shouldActuallyExecuteCommand(command : CommandExecutorCommand) : boolean
+    {
+        return !command.runUnderSudo && this.fakeReturnValue.status === '' && this.fakeReturnValue.stderr === '' && this.fakeReturnValue.stdout === '';
+    }
+
+    public resetReturnValues()
+    {
+        this.fakeReturnValue = {status: '', stderr: '', stdout: ''};
+        this.attemptedCommand = '';
+        this.otherCommandPatternsToMock = [];
+        this.otherCommandsReturnValues = [];
+    }
+
+    public async setEnvironmentVariable(variable : string, value : string, vscodeContext : IVSCodeExtensionContext, failureWarningMessage? : string, nonWinFailureMessage? : string)
+    {
+        return this.trueExecutor.setEnvironmentVariable(variable, value, vscodeContext, failureWarningMessage, nonWinFailureMessage);
+    }
 }
 
 export class MockFileUtilities extends IFileUtilities
 {
     private trueUtilities = new FileUtilities();
 
-    public writeFileOntoDisk(content : string, filePath : string)
+    public writeFileOntoDisk(content : string, filePath : string, alreadyHoldingLock = false)
     {
-        return this.trueUtilities.writeFileOntoDisk(content, filePath, new MockEventStream());
+        return this.trueUtilities.writeFileOntoDisk(content, filePath, alreadyHoldingLock, new MockEventStream());
     }
 
-    public wipeDirectory(directoryToWipe : string, eventSteam : IEventStream)
+    public wipeDirectory(directoryToWipe : string, eventSteam : IEventStream, fileExtensionsToDelete? : string[])
     {
-        return this.trueUtilities.wipeDirectory(directoryToWipe, eventSteam);
+        return this.trueUtilities.wipeDirectory(directoryToWipe, eventSteam, fileExtensionsToDelete);
     }
 
     public isElevated()
@@ -420,7 +479,7 @@ export class MockDistroProvider extends IDistroDotnetSDKProvider
         return Promise.resolve(this.supportStatusReturnValue);
     }
 
-    public getRecommendedDotnetVersion(installType : LinuxInstallType): Promise<string> {
+    public getRecommendedDotnetVersion(installType : DotnetInstallMode): Promise<string> {
         this.commandRunner.execute(CommandExecutor.makeCommand(`recommended`, [`version`]));
         return Promise.resolve(this.recommendedVersionReturnValue);
     }
@@ -439,16 +498,16 @@ export class MockDistroProvider extends IDistroDotnetSDKProvider
         return new GenericDistroSDKProvider(this.distroVersion, this.context, getMockUtilityContext()).JsonDotnetVersion(fullySpecifiedDotnetVersion);
     }
 
-    protected isPackageFoundInSearch(resultOfSearchCommand: any): boolean {
+    protected isPackageFoundInSearch(resultOfSearchCommand: any, searchCommandExitCode : string): boolean {
         return true;
     }
 }
 
 
 export class FailingInstallScriptWorker extends InstallScriptAcquisitionWorker {
-    constructor(extensionState: IExtensionState, eventStream: IEventStream) {
-        super(extensionState, eventStream, testDefaultTimeoutTimeMs);
-        this.webWorker = new MockWebRequestWorker(extensionState, eventStream, '');
+    constructor(ctx : IAcquisitionWorkerContext) {
+        super(ctx);
+        this.webWorker = new MockWebRequestWorker(ctx, '');
     }
 
     public getDotnetInstallScriptPath() : Promise<string> {
@@ -487,7 +546,7 @@ export class MockTelemetryReporter implements ITelemetryReporter {
 }
 
 export class MockInstallationValidator extends IInstallationValidator {
-    public validateDotnetInstall(version: string, dotnetPath: string): void {
+    public validateDotnetInstall(version: DotnetInstall, dotnetPath: string): void {
         // Always validate
     }
 }
@@ -507,20 +566,57 @@ export class MockLoggingObserver implements ILoggingObserver {
 }
 
 export class MockExtensionConfiguration implements IExtensionConfiguration {
-    constructor(private readonly existingPaths: IExistingPath[], private readonly enableTelemetry: boolean) { }
+    constructor(private readonly existingPaths: ILocalExistingPath[], private readonly enableTelemetry: boolean, private readonly existingSharedPath: string,
+        public allowInvalidPaths = false
+    ) { }
 
     public update<T>(section: string, value: T): Thenable<void> {
         // Not used, stubbed to implement interface
-        return new Promise((resolve) => resolve());
+        return new Promise<void>((resolve) => resolve());
     }
 
-    public get<T>(name: string): T | undefined {
-        if (name === 'existingDotnetPath') {
+    public get<T>(name: string): T | undefined
+    {
+        if (name === 'existingDotnetPath')
+        {
             return this.existingPaths as unknown as T;
-        } else if (name === 'enableTelemetry') {
+        }
+        else if(name === 'sharedExistingDotnetPath')
+        {
+            return this.existingSharedPath as unknown as T;
+        }
+        else if (name === 'enableTelemetry')
+        {
             return this.enableTelemetry as unknown as T;
-        } else {
+        }
+        else if(name === 'allowInvalidPaths')
+        {
+            return this.allowInvalidPaths as unknown as T;
+        }
+        else
+        {
             return undefined;
         }
+    }
+}
+
+export class MockInstallTracker extends InstallTrackerSingleton
+{
+    constructor(eventStream : IEventStream, extensionState : IExtensionState)
+    {
+        super(eventStream, extensionState);
+        // Cause an instance to exist so that we can override the members.
+        const _ = InstallTrackerSingleton.getInstance(eventStream, extensionState);
+        this.overrideMembers(eventStream, extensionState);
+    }
+
+    public getExtensionState() : IExtensionState
+    {
+        return this.extensionState;
+    }
+
+    public setExtensionState(extensionState : IExtensionState) : void
+    {
+        this.extensionState = extensionState;
     }
 }

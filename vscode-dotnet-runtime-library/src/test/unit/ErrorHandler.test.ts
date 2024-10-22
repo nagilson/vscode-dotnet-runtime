@@ -3,8 +3,8 @@
 *  The .NET Foundation licenses this file to you under the MIT license.
 *--------------------------------------------------------------------------------------------*/
 import * as chai from 'chai';
-import { DotnetCommandFailed, DotnetCommandSucceeded } from '../../EventStream/EventStreamEvents';
-import { ExistingPathKeys } from '../../IExtensionContext';
+import { ExistingPathKeys, IExistingPaths } from '../../IExtensionContext';
+import { DotnetCommandFailed, DotnetCommandSucceeded, DotnetNotInstallRelatedCommandFailed } from '../../EventStream/EventStreamEvents';
 import {
     errorConstants,
     timeoutConstants,
@@ -69,10 +69,11 @@ suite('ErrorHandler Unit Tests', () => {
         assert.isDefined(displayWorker.callback);
         await displayWorker.callback!('Configure manually');
         assert.include(displayWorker.infoMessage, `Set .NET path to ${__dirname}.`);
-        const configResult = context.extensionConfigWorker.getPathConfigurationValue();
+        const configResult = context.extensionConfigWorker.getAllPathConfigurationValues();
         assert.isDefined(configResult);
-        const expectedConfig = [{ [ExistingPathKeys.extensionIdKey]: mockExtensionId, [ExistingPathKeys.pathKey] : __dirname },
-                              { [ExistingPathKeys.extensionIdKey]: 'MockRequestingExtensionId', [ExistingPathKeys.pathKey] : 'MockPath' }];
+        const expectedConfig : IExistingPaths = {
+            individualizedExtensionPaths: [{ [ExistingPathKeys.extensionIdKey]: 'MockRequestingExtensionId', [ExistingPathKeys.pathKey] : 'MockPath' }],
+            sharedExistingPath: __dirname};
         assert.deepEqual(configResult!, expectedConfig);
     });
 
@@ -117,6 +118,6 @@ suite('ErrorHandler Unit Tests', () => {
             throw new Error(timeoutConstants.timeoutMessage);
         }, issueContext(displayWorker, eventStream));
 
-        assert.exists(eventStream.events.find(event => event instanceof DotnetCommandFailed));
+        assert.exists(eventStream.events.find(event => event instanceof DotnetNotInstallRelatedCommandFailed));
     });
 });

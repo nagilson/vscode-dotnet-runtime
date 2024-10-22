@@ -5,23 +5,19 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as lockfile from 'proper-lockfile';
-import { IEventStream } from '../EventStream/EventStream';
 import {
     DotnetFallbackInstallScriptUsed,
-    DotnetFileWriteRequestEvent,
     DotnetInstallScriptAcquisitionCompleted,
     DotnetInstallScriptAcquisitionError,
-    DotnetLockAcquiredEvent,
-    DotnetLockAttemptingAcquireEvent,
-    DotnetLockErrorEvent,
-    DotnetLockReleasedEvent,
+    EventBasedError,
 } from '../EventStream/EventStreamEvents';
-import { IExtensionState } from '../IExtensionState';
 import { WebRequestWorker } from '../Utils/WebRequestWorker';
 import { Debugging } from '../Utils/Debugging';
-import { IInstallScriptAcquisitionWorker } from './IInstallScriptAcquisitionWorker';
 import { FileUtilities } from '../Utils/FileUtilities';
+import { getInstallFromContext } from '../Utils/InstallIdUtilities';
+
+import { IInstallScriptAcquisitionWorker } from './IInstallScriptAcquisitionWorker';
+import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
 
 export class InstallScriptAcquisitionWorker implements IInstallScriptAcquisitionWorker {
     protected webWorker: WebRequestWorker;
@@ -30,11 +26,11 @@ export class InstallScriptAcquisitionWorker implements IInstallScriptAcquisition
     private readonly fileUtilities: FileUtilities;
 
 
-    constructor(extensionState: IExtensionState, private readonly eventStream: IEventStream, private readonly timeoutTime : number) {
+    constructor(private readonly context : IAcquisitionWorkerContext) {
         const scriptFileEnding = os.platform() === 'win32' ? 'ps1' : 'sh';
         const scriptFileName = 'dotnet-install';
         this.scriptFilePath = path.join(__dirname, 'install scripts', `${scriptFileName}.${scriptFileEnding}`);
-        this.webWorker = new WebRequestWorker(extensionState, eventStream, this.scriptAcquisitionUrl + scriptFileEnding, this.timeoutTime * 1000);
+        this.webWorker = new WebRequestWorker(context, this.scriptAcquisitionUrl + scriptFileEnding);
         this.fileUtilities = new FileUtilities();
     }
 
@@ -45,27 +41,27 @@ export class InstallScriptAcquisitionWorker implements IInstallScriptAcquisition
             const script = await this.webWorker.getCachedData();
             if (!script) {
                 Debugging.log('The request to acquire the script failed.');
-                throw new Error('Unable to get script path.');
+                throw new EventBasedError('NoInstallScriptPathExists', 'Unable to get script path.');
             }
 
-            await this.fileUtilities.writeFileOntoDisk(script, this.scriptFilePath, this.eventStream);
-            this.eventStream.post(new DotnetInstallScriptAcquisitionCompleted());
+            await this.fileUtilities.writeFileOntoDisk(script, this.scriptFilePath, false, this.context.eventStream);
+            this.context.eventStream.post(new DotnetInstallScriptAcquisitionCompleted());
             return this.scriptFilePath;
         }
-        catch (error)
+        catch (error : any)
         {
             Debugging.log('An error occurred processing the install script.');
-            this.eventStream.post(new DotnetInstallScriptAcquisitionError(error as Error));
+            this.context.eventStream.post(new DotnetInstallScriptAcquisitionError(error as Error, getInstallFromContext(this.context)));
 
             // Try to use fallback install script
             const fallbackPath = this.getFallbackScriptPath();
             if (fs.existsSync(fallbackPath)) {
                 Debugging.log('Returning the fallback script path.');
-                this.eventStream.post(new DotnetFallbackInstallScriptUsed());
+                this.context.eventStream.post(new DotnetFallbackInstallScriptUsed());
                 return fallbackPath;
             }
 
-            throw new Error(`Failed to Acquire Dotnet Install Script: ${error}`);
+            throw new EventBasedError('UnableToAcquireDotnetInstallScript', `Failed to Acquire Dotnet Install Script: ${error}`);
         }
     }
 

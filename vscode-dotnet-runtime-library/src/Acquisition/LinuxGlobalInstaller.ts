@@ -14,10 +14,10 @@ export class LinuxGlobalInstaller extends IGlobalInstaller {
     private version : string;
     private linuxSDKResolver : LinuxVersionResolver;
 
-    constructor(acqusitionContext : IAcquisitionWorkerContext, utilContext : IUtilityContext, acquireContext : IDotnetAcquireContext, fullySpecifiedDotnetVersion : string)
+    constructor(acquisitionContext : IAcquisitionWorkerContext, utilContext : IUtilityContext, fullySpecifiedDotnetVersion : string)
     {
-        super(acqusitionContext, utilContext);
-        this.linuxSDKResolver = new LinuxVersionResolver(acqusitionContext, utilContext, acquireContext);
+        super(acquisitionContext, utilContext);
+        this.linuxSDKResolver = new LinuxVersionResolver(acquisitionContext, utilContext);
         this.version = fullySpecifiedDotnetVersion;
     }
 
@@ -28,13 +28,20 @@ export class LinuxGlobalInstaller extends IGlobalInstaller {
         return this.linuxSDKResolver.ValidateAndInstallSDK(this.version);
     }
 
-    public async getExpectedGlobalSDKPath(specificSDKVersionInstalled : string, installedArch : string) : Promise<string>
+    public async uninstallSDK() : Promise<string>
+    {
+        await this.linuxSDKResolver.Initialize();
+
+        return this.linuxSDKResolver.UninstallSDK(this.version);
+    }
+
+    public async getExpectedGlobalSDKPath(specificSDKVersionInstalled : string, installedArch : string, macPathShouldExist = true) : Promise<string>
     {
         await this.linuxSDKResolver.Initialize();
 
         const dotnetFolder = await (await this.linuxSDKResolver.distroCall()).getDotnetVersionSupportStatus(specificSDKVersionInstalled, 'sdk') === DotnetDistroSupportStatus.Distro ?
-            await (await this.linuxSDKResolver.distroCall()).getExpectedDotnetDistroFeedInstallationDirectory() :
-            await (await this.linuxSDKResolver.distroCall()).getExpectedDotnetMicrosoftFeedInstallationDirectory();
+            (await this.linuxSDKResolver.distroCall()).getExpectedDotnetDistroFeedInstallationDirectory() :
+            (await this.linuxSDKResolver.distroCall()).getExpectedDotnetMicrosoftFeedInstallationDirectory();
         return dotnetFolder;
     }
 

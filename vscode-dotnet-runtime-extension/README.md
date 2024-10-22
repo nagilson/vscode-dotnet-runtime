@@ -2,7 +2,8 @@
 
 [![Version](https://img.shields.io/visual-studio-marketplace/v/ms-dotnettools.vscode-dotnet-runtime?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.vscode-dotnet-runtime) [![Installs](https://img.shields.io/visual-studio-marketplace/i/ms-dotnettools.vscode-dotnet-runtime?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.vscode-dotnet-runtime)
 
-This extension provides a unified way for other extensions like the [C#] and [C# Dev Kit] extensions to install local versions of the .NET Runtime, and machine-wide versions of the .NET SDK. Those extensions tell the .NET Install Tool when they would like a .NET SDK to be on the machine, and we install one for them if there's not already one that matches the SDK they need to run properly. In the future, this tool may support allowing users to call the API via VS Code to install .NET and pick a version of the SDK to install themselves.
+This extension provides a unified way for other extensions like the [C#] and [C# Dev Kit] extensions to install local versions of the .NET Runtime, and machine-wide versions of the .NET SDK. Those extensions tell the .NET Install Tool when they would like a .NET SDK to be on the machine, and we install one for them if there's not already one that matches the SDK they need to run properly. Users can also install the .NET SDK themselves by reading below.
+
 
 ## Why do I have this extension?
 
@@ -17,11 +18,40 @@ This extension was probably included as a dependency of one of the following ext
 
 The above extensions call into this extension to provide a unified way of downloading shared .NET Runtimes or .NET SDKs. If you already have an installation of .NET that you'd like to use, see [the troubleshooting section below](#i-already-have-a-net-runtime-or-sdk-installed-and-i-want-to-use-it). If you want to remove this extension completely, you will need to uninstall any extensions that depend on it first. If this extension is uninstalled, any .NET Runtimes installed by it will also be removed.
 
+## Using the extension yourself
+
+As of version 2.0.2, you can install the .NET SDK using part of our private API via the VS Code Command Palette!
+
+To use the feature:
+Bring up the command palette (ctrl + shift + p) and run the command:
+.NET Install Tool - Install the .NET SDK System-Wide.
+
+![Video demonstrating use of the command pallet to install .NET.](https://raw.githubusercontent.com/dotnet/vscode-dotnet-runtime/63b7fca6c714781dc4cb1cdbcb786013f2115098/Documentation/example.gif)
+
+The command will try to find the best version of .NET for you to install, but you can tell it to install other versions as well based on its prompt.
+Note this feature does not support all distros, WSL, nor preview or RC versions of .NET.
+
+The rest of the extension functionality is still limited to other extensions that rely on our extension.
+
 ## Troubleshooting
 
 ### I already have a .NET Runtime or SDK installed, and I want to use it
 
-Try adding the requesting extension to the `dotnetAcquisitionExtension.existingDotnetPath` setting in your vscode.json settings file. You can read more about [using external installations] in our documentation, but here's an example of how to tell the [C#] extension to use your existing .NET installation:
+If you want to use your own installation(s) of .NET, you can either use one for all extensions in VS Code, or use different installations for specific extensions.
+
+This is the path to an existing .NET host executable that will select a runtime based on what's installed beside it for an extension's code to run under.
+⚠️ This is NOT the .NET Runtime that your project will use to run. Extensions such as `C#`, `C# DevKit`, and more have components written in .NET. This .NET PATH is the `dotnet.exe` or `dotnet` that these extensions will use to run their code, not your code.
+
+Using a path value in which .NET does not meet the requirements of a specific extension will cause that extension to fail. The version of .NET that is used for your project is determined by the .NET host, or dotnet.exe. The .NET host picks a runtime based on your project. To use a specific version of .NET for your project, install the .NET SDK using the `.NET Install Tool - Install SDK System-Wide` command, install .NET manually using [our instructions](https://dotnet.microsoft.com/download), or edit your PATH environment variable to point to a `dotnet.exe` that has an `/sdk/` folder with only one SDK.
+
+If you want to use the installation for all extensions, set the `dotnetAcquisitionExtension.sharedExistingDotnetPath`.
+
+Example:
+```json
+    "dotnetAcquisitionExtension.sharedExistingDotnetPath": "/usr/share/dotnet/dotnet"
+```
+
+If instead you want more granular control, add the requesting extension to the `dotnetAcquisitionExtension.existingDotnetPath` setting in your vscode.json settings file. You can read more about [using external installations] in our documentation, but here's an example of how to tell the [C#] extension to use your existing .NET installation:
 
 ```json
     "dotnetAcquisitionExtension.existingDotnetPath": [
@@ -95,6 +125,28 @@ See the [.NET home repo](https://github.com/Microsoft/dotnet) to find other .NE
 ## Telemetry Notice
 
 Please note that this extension collects telemetry by default and aims to follow the [VS Code Telemetry Policy](https://code.visualstudio.com/api/extension-guides/telemetry). You may disable this telemetry in the extension settings.
+
+## Third Party Notices
+
+The [notices](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/THIRD-PARTY-NOTICES.txt) file contains third party notices and licenses.
+
+## Contribution
+
+Contributions are always welcome. Please see our [contributing guide](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/Documentation/contributing.md) for more details.
+
+## Microsoft Open Source Code of Conduct
+
+This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/). For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact opencode@microsoft.com with any additional questions or comments.
+
+## Questions and Feedback
+
+**[Provide feedback](https://github.com/dotnet/vscode-dotnet-runtime/issues/new/choose)**
+File questions, issues, or feature requests for the extension.
+
+## Trademarks
+
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow Microsoft’s Trademark & Brand Guidelines. Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party’s policies.
+
 
 [C#]: https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csharp
 [C# Dev Kit]: https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit

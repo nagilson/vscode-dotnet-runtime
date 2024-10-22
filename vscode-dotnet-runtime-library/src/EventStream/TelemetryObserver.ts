@@ -2,16 +2,17 @@
 *  Licensed to the .NET Foundation under one or more agreements.
 *  The .NET Foundation licenses this file to you under the MIT license.
 *--------------------------------------------------------------------------------------------*/
-import TelemetryReporter from 'vscode-extension-telemetry';
+import TelemetryReporter from '@vscode/extension-telemetry';
 import * as vscode from 'vscode';
 
 import { IPackageJson } from './EventStreamRegistration';
 import { IEvent } from './IEvent';
 import { IEventStreamObserver } from './IEventStreamObserver';
-import { IEventStream } from './EventStream';
 import { IVSCodeExtensionContext } from '../IVSCodeExtensionContext';
 import { IUtilityContext } from '../Utils/IUtilityContext';
 import { TelemetryUtilities } from './TelemetryUtilities';
+import { IAcquisitionWorkerContext } from '../Acquisition/IAcquisitionWorkerContext';
+import { IDotnetAcquireContext } from '..';
 
 export interface ITelemetryReporter {
     sendTelemetryEvent(eventName: string, properties?: { [key: string]: string }, measures?: { [key: string]: number }): void;
@@ -22,18 +23,15 @@ export interface ITelemetryReporter {
 export class TelemetryObserver implements IEventStreamObserver {
     private readonly telemetryReporter: ITelemetryReporter;
     private isExtensionTelemetryEnabled = false;
-    private eventStream : IEventStream;
-    private extensionContext : IVSCodeExtensionContext;
-    private utilityContext : IUtilityContext;
+    private acquisitionContext : IAcquisitionWorkerContext | null = null;
 
-    constructor(packageJson: IPackageJson, isExtensionTelemetryEnabled : boolean, eventStream : IEventStream,
-        extensionContext : IVSCodeExtensionContext, utilContext : IUtilityContext, telemetryReporter?: ITelemetryReporter) {
+    constructor(packageJson: IPackageJson, isExtensionTelemetryEnabled : boolean, private readonly extensionContext : IVSCodeExtensionContext,
+            private readonly utilityContext : IUtilityContext, telemetryReporter?: ITelemetryReporter)
+    {
         if (telemetryReporter === undefined)
         {
-            const extensionVersion = packageJson.version;
-            const appInsightsKey = packageJson.appInsightsKey;
-            const extensionId = packageJson.name;
-            this.telemetryReporter = new TelemetryReporter(extensionId, extensionVersion, appInsightsKey);
+            const connectionString : string = packageJson.connectionString;
+            this.telemetryReporter = new TelemetryReporter(connectionString ?? '');
         }
         else
         {
@@ -41,15 +39,18 @@ export class TelemetryObserver implements IEventStreamObserver {
         }
 
         this.isExtensionTelemetryEnabled = isExtensionTelemetryEnabled;
-        this.eventStream = eventStream;
-        this.extensionContext = extensionContext;
-        this.utilityContext = utilContext;
 
         vscode.env.onDidChangeTelemetryEnabled((newIsTelemetryEnabledSetting: boolean) =>
         {
             this.isExtensionTelemetryEnabled = newIsTelemetryEnabledSetting;
-            TelemetryUtilities.setDotnetSDKTelemetryToMatch(this.isExtensionTelemetryEnabled, this.extensionContext, this.eventStream, this.utilityContext);
+            TelemetryUtilities.setDotnetSDKTelemetryToMatch(this.isExtensionTelemetryEnabled, this.extensionContext, this.acquisitionContext, this.utilityContext).catch(() => {});
         });
+    }
+
+    public setAcquisitionContext(context : IAcquisitionWorkerContext, underlyingAcquisitionContext : IDotnetAcquireContext)
+    {
+        context.acquisitionContext = underlyingAcquisitionContext;
+        this.acquisitionContext = context;
     }
 
     /**
@@ -66,6 +67,14 @@ export class TelemetryObserver implements IEventStreamObserver {
         if(TelemetryUtilities.isTelemetryEnabled(this.isExtensionTelemetryEnabled, this.utilityContext))
         {
             const properties = event.getSanitizedProperties(); // Get properties that don't contain personally identifiable data
+
+            // Certain events get sent way too often (ex: 700 million locks acquired over a few months which is causing problems for the data team) and aren't useful for telemetry.
+            // We allow suppressing certain events before even hitting the data ingestion service by doing a check here.
+            if(properties && properties?.suppressTelemetry === 'true')
+            {
+                return;
+            }
+
             if (!properties) {
                 this.telemetryReporter.sendTelemetryEvent(event.eventName);
             } else if (event.isError) {
@@ -78,6 +87,6 @@ export class TelemetryObserver implements IEventStreamObserver {
 
     public dispose(): void
     {
-        this.telemetryReporter.dispose();
+        this.telemetryReporter.dispose().catch(() => {});
     }
 }

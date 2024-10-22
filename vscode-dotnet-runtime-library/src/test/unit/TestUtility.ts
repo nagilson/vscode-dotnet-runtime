@@ -3,30 +3,65 @@
 *  The .NET Foundation licenses this file to you under the MIT license.
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
+import * as os from 'os';
 
+import { MockWindowDisplayWorker } from '../mocks/MockWindowDisplayWorker';
+import { MockDotnetCoreAcquisitionWorker, MockEventStream, MockExtensionContext, MockInstallationValidator, MockVSCodeEnvironment, MockVSCodeExtensionContext } from '../mocks/MockObjects';
 import { IDotnetAcquireContext } from '../../IDotnetAcquireContext';
 import { IAcquisitionWorkerContext } from '../../Acquisition/IAcquisitionWorkerContext';
-import { RuntimeInstallationDirectoryProvider } from '../../Acquisition/RuntimeInstallationDirectoryProvider';
-import { SdkInstallationDirectoryProvider } from '../../Acquisition/SdkInstallationDirectoryProvider';
+import { IEventStream } from '../../EventStream/EventStream';
 import { IUtilityContext } from '../../Utils/IUtilityContext';
-import { MockEventStream, MockExtensionContext, MockInstallationValidator, MockVSCodeEnvironment, NoInstallAcquisitionInvoker } from '../mocks/MockObjects';
-import { MockWindowDisplayWorker } from '../mocks/MockWindowDisplayWorker';
+import { IInstallationDirectoryProvider } from '../../Acquisition/IInstallationDirectoryProvider';
+import { directoryProviderFactory } from '../../Acquisition/DirectoryProviderFactory';
+import { DotnetInstallMode } from '../../Acquisition/DotnetInstallMode';
+
 const standardTimeoutTime = 100000;
 
-export function getMockAcquisitionContext(runtimeInstall: boolean, timeoutTime : number = standardTimeoutTime): IAcquisitionWorkerContext{
-    const extensionContext = new MockExtensionContext();
-    const eventStream = new MockEventStream();
-    const workerContext : IAcquisitionWorkerContext = {
+export function getMockAcquisitionContext(mode: DotnetInstallMode, version : string, timeoutTime : number = standardTimeoutTime, customEventStream? : IEventStream,
+    customContext? : MockExtensionContext, arch? : string | null, directory? : IInstallationDirectoryProvider): IAcquisitionWorkerContext
+{
+    const extensionContext = customContext ?? new MockExtensionContext();
+    const myEventStream = customEventStream ?? new MockEventStream();
+    const workerContext : IAcquisitionWorkerContext =
+    {
         storagePath: '',
         extensionState: extensionContext,
-        eventStream,
-        acquisitionInvoker: new NoInstallAcquisitionInvoker(eventStream),
-        installationValidator: new MockInstallationValidator(eventStream),
-        timeoutValue: timeoutTime,
-        installDirectoryProvider: runtimeInstall ? new RuntimeInstallationDirectoryProvider('') : new SdkInstallationDirectoryProvider(''),
-        isExtensionTelemetryInitiallyEnabled: true
+        eventStream: myEventStream,
+        acquisitionContext: getMockAcquireContext(version, arch, mode),
+        installationValidator: new MockInstallationValidator(myEventStream),
+        timeoutSeconds: timeoutTime,
+        proxyUrl: undefined,
+        installDirectoryProvider: directory ? directory : directoryProviderFactory(mode, ''),
+        isExtensionTelemetryInitiallyEnabled: true,
+        allowInvalidPathSetting: customContext?.get('dotnetAcquisitionExtension.allowInvalidPaths') ?? false
     };
     return workerContext;
+}
+
+export function getMockAcquisitionWorkerContext(acquireContext : IDotnetAcquireContext)
+{
+    const extensionContext = new MockExtensionContext();
+    const myEventStream = new MockEventStream();
+    const workerContext : IAcquisitionWorkerContext =
+    {
+        storagePath: '',
+        extensionState: extensionContext,
+        eventStream: myEventStream,
+        acquisitionContext: acquireContext,
+        installationValidator: new MockInstallationValidator(myEventStream),
+        timeoutSeconds: standardTimeoutTime,
+        proxyUrl: undefined,
+        installDirectoryProvider: directoryProviderFactory(acquireContext.mode!, ''),
+        isExtensionTelemetryInitiallyEnabled: true,
+        allowInvalidPathSetting: false
+    };
+    return workerContext;
+}
+
+export function getMockAcquisitionWorker(mockContext : IAcquisitionWorkerContext) : MockDotnetCoreAcquisitionWorker
+{
+    const acquisitionWorker = new MockDotnetCoreAcquisitionWorker(getMockUtilityContext(), new MockVSCodeExtensionContext());
+    return acquisitionWorker;
 }
 
 export function getMockUtilityContext() : IUtilityContext
@@ -38,11 +73,14 @@ export function getMockUtilityContext() : IUtilityContext
     return utilityContext;
 }
 
-export function getMockAcquireContext() : IDotnetAcquireContext
+export function getMockAcquireContext(nextAcquiringVersion : string, arch : string | null | undefined, installMode : DotnetInstallMode) : IDotnetAcquireContext
 {
     const acquireContext : IDotnetAcquireContext =
     {
-        version: ''
+        version: nextAcquiringVersion,
+        architecture: arch,
+        requestingExtensionId: 'test',
+        mode: installMode
     };
     return acquireContext;
 }

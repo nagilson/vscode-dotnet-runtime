@@ -2,6 +2,9 @@
 *  Licensed to the .NET Foundation under one or more agreements.
 *  The .NET Foundation licenses this file to you under the MIT license.
 *--------------------------------------------------------------------------------------------*/
+
+/* eslint-disable */ // When editing this file, please remove this and fix the linting concerns.
+
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -178,11 +181,11 @@ export class DotnetCoreDependencyInstaller {
 
     private getShellCommand(): string {
         if (this.platform === 'win32') {
-            return which('cmd').toString();
+            return which('cmd')?.toString() ?? 'cmd';
         }
         // Test for existence of bash which won't exist on the base Alpine Linux container, use sh instead there
         const shellCommand = which('bash');
         // shellCommand will be null if bash is not found
-        return shellCommand ? shellCommand.toString() : which('sh').toString();
+        return shellCommand ? shellCommand.toString() : which('sh')?.toString() ?? 'sh';
     }
 }

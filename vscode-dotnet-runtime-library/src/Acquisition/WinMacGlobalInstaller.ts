@@ -6,23 +6,41 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+
+import * as versionUtils from './VersionUtilities'
 import { FileUtilities } from '../Utils/FileUtilities';
-import { IGlobalInstaller } from './IGlobalInstaller';
-import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
 import { VersionResolver } from './VersionResolver';
-import { DotnetConflictingGlobalWindowsInstallError, DotnetFileIntegrityCheckEvent, DotnetUnexpectedInstallerOSError, OSXOpenNotAvailableError, SuppressedAcquisitionError } from '../EventStream/EventStreamEvents';
-import { ICommandExecutor } from '../Utils/ICommandExecutor';
-import { CommandExecutor } from '../Utils/CommandExecutor';
-import { IFileUtilities } from '../Utils/IFileUtilities';
 import { WebRequestWorker } from '../Utils/WebRequestWorker';
+import { getInstallFromContext } from '../Utils/InstallIdUtilities';
+import { CommandExecutor } from '../Utils/CommandExecutor';
+import {
+    DotnetAcquisitionAlreadyInstalled,
+    DotnetConflictingGlobalWindowsInstallError,
+    DotnetFileIntegrityCheckEvent,
+    DotnetFileIntegrityFailureEvent,
+    DotnetInstallCancelledByUserError,
+    DotnetNoInstallerResponseError,
+    DotnetUnexpectedInstallerOSError,
+    EventBasedError,
+    EventCancellationError,
+    NetInstallerBeginExecutionEvent,
+    NetInstallerEndExecutionEvent,
+    OSXOpenNotAvailableError,
+    SuppressedAcquisitionError,
+} from '../EventStream/EventStreamEvents';
+
+import { IGlobalInstaller } from './IGlobalInstaller';
+import { ICommandExecutor } from '../Utils/ICommandExecutor';
+import { IFileUtilities } from '../Utils/IFileUtilities';
 import { IUtilityContext } from '../Utils/IUtilityContext';
-/* tslint:disable:only-arrow-functions */
-/* tslint:disable:no-empty */
-/* tslint:disable:no-any */
+import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
+import { DotnetInstall } from './DotnetInstall';
+import { CommandExecutorResult } from '../Utils/CommandExecutorResult';
+import { getOSArch } from '../Utils/TypescriptUtilities';
 
 namespace validationPromptConstants
 {
-    export const noSignatureMessage = `The .NET install file could not be validated. It may be insecure or too new to verify. Would you like to continue installing .NET and accept the risks?`;
+    export const noSignatureMessage = `The .NET Installer file could not be validated. It may be insecure or too new to verify. Would you like to continue installing .NET and accept the risks?`;
     export const cancelOption = 'Cancel Install';
     export const allowOption = 'Install Anyways';
 }
@@ -40,9 +58,12 @@ export class WinMacGlobalInstaller extends IGlobalInstaller {
     private installerHash : string;
     protected commandRunner : ICommandExecutor;
     public cleanupInstallFiles = true;
+    private completedInstall = false;
     protected versionResolver : VersionResolver;
     public file : IFileUtilities;
     protected webWorker : WebRequestWorker;
+    private invalidIntegrityError = `The integrity of the .NET install file is invalid, or there was no integrity to check and you denied the request to continue with those risks.
+We cannot verify our .NET file host at this time. Please try again later or install the SDK manually.`;
 
     constructor(context : IAcquisitionWorkerContext, utilContext : IUtilityContext, installingVersion : string, installerUrl : string,
         installerHash : string, executor : ICommandExecutor | null = null)
@@ -51,14 +72,49 @@ export class WinMacGlobalInstaller extends IGlobalInstaller {
         this.installerUrl = installerUrl;
         this.installingVersion = installingVersion;
         this.installerHash = installerHash;
-        this.commandRunner = executor ?? new CommandExecutor(context.eventStream, utilContext);
-        this.versionResolver = new VersionResolver(context.extensionState, context.eventStream, context.timeoutValue, context.proxyUrl);
+        this.commandRunner = executor ?? new CommandExecutor(context, utilContext);
+        this.versionResolver = new VersionResolver(context);
         this.file = new FileUtilities();
-        this.webWorker = new WebRequestWorker(context.extensionState, context.eventStream,
-            installerUrl, this.acquisitionContext.timeoutValue, this.acquisitionContext.proxyUrl);
+        this.webWorker = new WebRequestWorker(context, installerUrl);
     }
 
-    public async installSDK(): Promise<string>
+    public static InterpretExitCode(code : string) : string
+    {
+        const reportLogMessage = `Please provide your .NET Installer log (note our privacy notice), which can be found at %temp%.
+The file has a name like 'Microsoft_.NET_SDK*.log and should appear in recent files.
+This report should be made at https://github.com/dotnet/vscode-dotnet-runtime/issues.`
+
+        switch(code)
+        {
+            case '1':
+                return `The .NET SDK installer has failed with a generic failure. ${reportLogMessage}`;
+            case '5':
+                return `Insufficient permissions are available to install .NET. Please run the installer as an administrator.`;
+            case '67':
+                return `The network name cannot be found. ${reportLogMessage}`;
+            case '112':
+                return `The disk is full. Please free up space and try again.`;
+            case '255':
+                return `The .NET Installer was terminated by another process unexpectedly. Please try again.`;
+            case '1260':
+                return `The .NET SDK is blocked by group policy. Can you please report this at https://github.com/dotnet/vscode-dotnet-runtime/issues`
+            case '1460':
+                return `The .NET SDK had a timeout error. ${reportLogMessage}`;
+            case '1603':
+                return `Fatal error during .NET SDK installation. ${reportLogMessage}`;
+            case '1618':
+                return `Another installation is already in progress. Complete that installation before proceeding with this install.`;
+            case '000751':
+                return `Page fault was satisfied by reading from a secondary storage device. ${reportLogMessage}`;
+            case '2147500037':
+                return `An unspecified error occurred. ${reportLogMessage}`;
+            case '2147942405':
+                return `Insufficient permissions are available to install .NET. Please try again as an administrator.`;
+        }
+        return '';
+    }
+
+    public async installSDK(install : DotnetInstall): Promise<string>
     {
         // Check for conflicting windows installs
         if(os.platform() === 'win32')
@@ -69,11 +125,16 @@ export class WinMacGlobalInstaller extends IGlobalInstaller {
                 if(conflictingVersion === this.installingVersion)
                 {
                     // The install already exists, we can just exit with Ok.
+                    this.acquisitionContext.eventStream.post(new DotnetAcquisitionAlreadyInstalled(install,
+                        (this.acquisitionContext.acquisitionContext && this.acquisitionContext.acquisitionContext.requestingExtensionId)
+                        ? this.acquisitionContext.acquisitionContext.requestingExtensionId : null));
                     return '0';
                 }
-                const err = new DotnetConflictingGlobalWindowsInstallError(new Error(`An global install is already on the machine: version ${conflictingVersion}, that conflicts with the requested version.
+                const err = new DotnetConflictingGlobalWindowsInstallError(new EventCancellationError(
+                    'DotnetConflictingGlobalWindowsInstallError',
+                    `A global install is already on the machine: version ${conflictingVersion}, that conflicts with the requested version.
                     Please uninstall this version first if you would like to continue.
-                    If Visual Studio is installed, you may need to use the VS Setup Window to uninstall the SDK component.`));
+                    If Visual Studio is installed, you may need to use the VS Setup Window to uninstall the SDK component.`), install);
                 this.acquisitionContext.eventStream.post(err);
                 throw err.error;
             }
@@ -83,26 +144,79 @@ export class WinMacGlobalInstaller extends IGlobalInstaller {
         const canContinue = await this.installerFileHasValidIntegrity(installerFile);
         if(!canContinue)
         {
-            const err = new DotnetConflictingGlobalWindowsInstallError(new Error(`The integrity of the .NET install file is invalid, or there was no integrity to check and you denied the request to continue with those risks.
-We cannot verify .NET is safe to download at this time. Please try again later.`));
+            const err = new DotnetConflictingGlobalWindowsInstallError(new EventCancellationError('DotnetConflictingGlobalWindowsInstallError',
+           this.invalidIntegrityError), install);
         this.acquisitionContext.eventStream.post(err);
         throw err.error;
         }
         const installerResult : string = await this.executeInstall(installerFile);
 
-        if(this.cleanupInstallFiles)
-        {
-            this.file.wipeDirectory(path.dirname(installerFile), this.acquisitionContext.eventStream);
-        }
+        return this.handleStatus(installerResult, installerFile, install);
+    }
 
+    private async handleStatus(installerResult : string, installerFile : string, install : DotnetInstall, allowRetry = true) : Promise<string>
+    {
         const validInstallerStatusCodes = ['0', '1641', '3010']; // Ok, Pending Reboot, + Reboot Starting Now
+        const noPermissionStatusCodes = ['1', '5', '1260', '2147942405'];
+
         if(validInstallerStatusCodes.includes(installerResult))
         {
+            if(this.cleanupInstallFiles)
+            {
+                this.file.wipeDirectory(path.dirname(installerFile), this.acquisitionContext.eventStream);
+            }
             return '0'; // These statuses are a success, we don't want to throw.
+        }
+        else if(installerResult === '1602')
+        {
+            // Special code for when user cancels the install
+            const err = new DotnetInstallCancelledByUserError(new EventCancellationError('DotnetInstallCancelledByUserError',
+                `The install of .NET was cancelled by the user. Aborting.`), install);
+            this.acquisitionContext.eventStream.post(err);
+            throw err.error;
+        }
+        else if(noPermissionStatusCodes.includes(installerResult) && allowRetry)
+        {
+            const retryWithElevationResult = await this.executeInstall(installerFile, true);
+            return this.handleStatus(retryWithElevationResult, installerFile, install, false);
         }
         else
         {
             return installerResult;
+        }
+    }
+
+    public async uninstallSDK(install : DotnetInstall): Promise<string>
+    {
+        if(os.platform() === 'win32')
+        {
+            const installerFile : string = await this.downloadInstaller(this.installerUrl);
+            const canContinue = await this.installerFileHasValidIntegrity(installerFile);
+            if(!canContinue)
+            {
+                const err = new DotnetConflictingGlobalWindowsInstallError(new EventCancellationError('DotnetConflictingGlobalWindowsInstallError',
+                    this.invalidIntegrityError), install);
+                this.acquisitionContext.eventStream.post(err);
+                throw err.error;
+            }
+
+            const command = `${path.resolve(installerFile)}`;
+            const uninstallArgs = ['/uninstall', '/passive', '/norestart'];
+            const commandResult = await this.commandRunner.execute(CommandExecutor.makeCommand(command, uninstallArgs), {timeout : this.acquisitionContext.timeoutSeconds * 1000});
+            this.handleTimeout(commandResult);
+
+            return commandResult.status;
+        }
+        else
+        {
+            const macPath = await this.getMacPath();
+            const command = CommandExecutor.makeCommand(`rm`, [`-rf`, `${path.join(path.dirname(macPath), 'sdk', install.version)}`, `&&`,
+`rm`, `-rf`, `${path.join(path.dirname(macPath), 'sdk-manifests', install.version)}`], true);
+
+            const commandResult = await this.commandRunner.execute(command, {timeout : this.acquisitionContext.timeoutSeconds * 1000});
+            this.handleTimeout(commandResult);
+
+            return commandResult.status;
         }
     }
 
@@ -113,19 +227,32 @@ We cannot verify .NET is safe to download at this time. Please try again later.`
      */
     private async downloadInstaller(installerUrl : string) : Promise<string>
     {
-        const ourInstallerDownloadFolder = IGlobalInstaller.getDownloadedInstallFilesFolder();
+        const ourInstallerDownloadFolder = IGlobalInstaller.getDownloadedInstallFilesFolder(installerUrl);
         this.file.wipeDirectory(ourInstallerDownloadFolder, this.acquisitionContext.eventStream);
         const installerPath = path.join(ourInstallerDownloadFolder, `${installerUrl.split('/').slice(-1)}`);
 
         const installerDir = path.dirname(installerPath);
         if (!fs.existsSync(installerDir)){
-            fs.mkdirSync(installerDir);
+            fs.mkdirSync(installerDir, {recursive: true});
         }
 
         await this.webWorker.downloadFile(installerUrl, installerPath);
         try
         {
-            fs.chmodSync(installerPath, 0o744);
+            if(os.platform() === 'win32') // Windows does not have chmod +x ability with nodejs.
+            {
+                const permissionsCommand = CommandExecutor.makeCommand('icacls', [`"${installerPath}"`, '/grant:r', `"%username%":F`, '/t', '/c']);
+                const commandRes = await this.commandRunner.execute(permissionsCommand, {}, false);
+                if(commandRes.stderr !== '')
+                {
+                    const error = new EventBasedError('FailedToSetInstallerPermissions', `Failed to set icacls permissions on the installer file ${installerPath}. ${commandRes.stderr}`);
+                    this.acquisitionContext.eventStream.post(new SuppressedAcquisitionError(error, error.message));
+                }
+            }
+            else
+            {
+                fs.chmodSync(installerPath, 0o744);
+            }
         }
         catch(error : any)
         {
@@ -134,38 +261,67 @@ We cannot verify .NET is safe to download at this time. Please try again later.`
         return installerPath;
     }
 
+    private async userChoosesToContinueWithInvalidHash() : Promise<boolean>
+    {
+        const yes = validationPromptConstants.allowOption;
+        const no = validationPromptConstants.cancelOption;
+        const message = validationPromptConstants.noSignatureMessage;
+
+        const pick = await this.utilityContext.ui.getModalWarningResponse(message, no, yes);
+        const userConsentsToContinue = pick === yes;
+        this.acquisitionContext.eventStream.post(new DotnetFileIntegrityCheckEvent(`The valid hash could not be found. The user chose to continue? ${userConsentsToContinue}`));
+        return userConsentsToContinue;
+    }
+
     private async installerFileHasValidIntegrity(installerFile : string) : Promise<boolean>
     {
-        const realFileHash = await this.file.getFileHash(installerFile);
-        this.acquisitionContext.eventStream.post(new DotnetFileIntegrityCheckEvent(`The hash of the installer file we downloaded is ${realFileHash}`));
-        const expectedFileHash = this.installerHash;
-        this.acquisitionContext.eventStream.post(new DotnetFileIntegrityCheckEvent(`The valid and expected hash of the installer file is ${expectedFileHash}`));
-
-        if(expectedFileHash === null)
+        try
         {
-            const yes = validationPromptConstants.allowOption
-            const no = validationPromptConstants.cancelOption;
-            const message = validationPromptConstants.noSignatureMessage;
+            const realFileHash = await this.file.getFileHash(installerFile);
 
-            const pick = await this.utilityContext.ui.getModalWarningResponse(message, no, yes);
-            const userConsentsToContinue = pick === yes;
-            this.acquisitionContext.eventStream.post(new DotnetFileIntegrityCheckEvent(`The valid hash could not be found. The user chose to continue? ${userConsentsToContinue}`));
-            return userConsentsToContinue;
+            this.acquisitionContext.eventStream.post(new DotnetFileIntegrityCheckEvent(`The hash of the installer file we downloaded is ${realFileHash}`));
+            const expectedFileHash = this.installerHash;
+            this.acquisitionContext.eventStream.post(new DotnetFileIntegrityCheckEvent(`The valid and expected hash of the installer file is ${expectedFileHash}`));
+
+            if(expectedFileHash === null)
+            {
+                return await this.userChoosesToContinueWithInvalidHash();
+            }
+
+            if(realFileHash !== expectedFileHash)
+            {
+                this.acquisitionContext.eventStream.post(new DotnetFileIntegrityCheckEvent(`The hashes DO NOT match.`));
+                return false;
+            }
+            else
+            {
+                this.acquisitionContext.eventStream.post(new DotnetFileIntegrityCheckEvent(`This file is valid.`));
+                return true;
+            }
         }
-
-        if(realFileHash !== expectedFileHash)
+        catch(error : any)
         {
-            this.acquisitionContext.eventStream.post(new DotnetFileIntegrityCheckEvent(`The hashes DO NOT match.`));
-            return false;
-        }
-        else
-        {
-            this.acquisitionContext.eventStream.post(new DotnetFileIntegrityCheckEvent(`This file is valid.`));
-            return true;
+            // Remove this when https://github.com/typescript-eslint/typescript-eslint/issues/2728 is done
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            if(error?.message?.includes('ENOENT'))
+            {
+                this.acquisitionContext.eventStream.post(new DotnetFileIntegrityFailureEvent(`The file ${installerFile} was not found, so we couldn't verify it.
+Please try again, or download the .NET Installer file yourself. You may also report your issue at https://github.com/dotnet/vscode-dotnet-runtime/issues.`));
+            }
+            // Remove this when https://github.com/typescript-eslint/typescript-eslint/issues/2728 is done
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            else if(error?.message?.includes('EPERM'))
+            {
+                this.acquisitionContext.eventStream.post(new DotnetFileIntegrityFailureEvent(`The file ${installerFile} did not have the correct permissions scope to be assessed.
+Permissions: ${JSON.stringify(await this.commandRunner.execute(CommandExecutor.makeCommand('icacls', [`"${installerFile}"`])))}`));
+            }
+            return this.userChoosesToContinueWithInvalidHash();
         }
     }
 
-    public async getExpectedGlobalSDKPath(specificSDKVersionInstalled : string, installedArch : string) : Promise<string>
+    // async is needed to match the interface even if we don't use await.
+    // eslint-disable-next-line @typescript-eslint/require-await
+    public async getExpectedGlobalSDKPath(specificSDKVersionInstalled : string, installedArch : string, macPathShouldExist = true) : Promise<string>
     {
         if(os.platform() === 'win32')
         {
@@ -176,14 +332,46 @@ We cannot verify .NET is safe to download at this time. Please try again later.`
         }
         else if(os.platform() === 'darwin')
         {
-            // On an arm machine we would install to /usr/local/share/dotnet/x64/dotnet/sdk` for a 64 bit sdk
-            // but we don't currently allow customizing the install architecture so that would never happen.
-            return path.resolve(`/usr/local/share/dotnet/dotnet`);
+            const sdkPath = await this.getMacPath(macPathShouldExist);
+            return sdkPath;
         }
 
-        const err = new DotnetUnexpectedInstallerOSError(new Error(`The operating system ${os.platform()} is unsupported.`));
+        const err = new DotnetUnexpectedInstallerOSError(new EventBasedError('DotnetUnexpectedInstallerOSError',
+            `The operating system ${os.platform()} is unsupported.`), getInstallFromContext(this.acquisitionContext));
         this.acquisitionContext.eventStream.post(err);
         throw err.error;
+    }
+
+    private handleTimeout(commandResult : CommandExecutorResult)
+    {
+        if(commandResult.status === 'SIGTERM')
+        {
+            const noResponseError = new DotnetNoInstallerResponseError(new EventBasedError('DotnetNoInstallerResponseError',
+`The .NET Installer did not complete after ${this.acquisitionContext.timeoutSeconds} seconds.
+If you would like to install .NET, please proceed to interact with the .NET Installer pop-up.
+If you were waiting for the install to succeed, please extend the timeout setting of the .NET Install Tool extension.`), getInstallFromContext(this.acquisitionContext));
+            this.acquisitionContext.eventStream.post(noResponseError);
+            throw noResponseError.error;
+        }
+    }
+
+    private async getMacPath(macPathShouldExist = true) : Promise<string>
+    {
+        const standardHostPath = path.resolve(`/usr/local/share/dotnet/dotnet`);
+        const arm64EmulationHostPath = path.resolve(`/usr/local/share/dotnet/x64/dotnet`);
+
+        if((os.arch() === 'x64' || os.arch() === 'ia32') && (await getOSArch(this.commandRunner)).includes('arm') && (fs.existsSync(arm64EmulationHostPath) || !macPathShouldExist))
+        {
+            // VS Code runs on an emulated version of node which will return x64 or use x86 emulation for ARM devices.
+            // os.arch() returns the architecture of the node binary, not the system architecture, so it will not report arm on an arm device.
+            return arm64EmulationHostPath;
+        }
+
+        if(!macPathShouldExist || fs.existsSync(standardHostPath) || !fs.existsSync(arm64EmulationHostPath))
+        {
+            return standardHostPath;
+        }
+        return arm64EmulationHostPath;
     }
 
     /**
@@ -191,9 +379,8 @@ We cannot verify .NET is safe to download at this time. Please try again later.`
      * @param installerPath The path to the installer file to run.
      * @returns The exit result from running the global install.
      */
-    public async executeInstall(installerPath : string) : Promise<string>
+    public async executeInstall(installerPath : string, elevateVsCode = false) : Promise<string>
     {
-        this.commandRunner.returnStatus = true;
         if(os.platform() === 'darwin')
         {
             // For Mac:
@@ -208,36 +395,68 @@ We cannot verify .NET is safe to download at this time. Please try again later.`
             let workingCommand = await this.commandRunner.tryFindWorkingCommand(possibleCommands);
             if(!workingCommand)
             {
-                const error = new Error(`The 'open' command on OSX was not detected. This is likely due to the PATH environment variable on your system being clobbered by another program.
+                const error = new EventBasedError('OSXOpenNotAvailableError',
+                `The 'open' command on OSX was not detected. This is likely due to the PATH environment variable on your system being clobbered by another program.
 Please correct your PATH variable or make sure the 'open' utility is installed so .NET can properly execute.`);
-                this.acquisitionContext.eventStream.post(new OSXOpenNotAvailableError(error));
+                this.acquisitionContext.eventStream.post(new OSXOpenNotAvailableError(error, getInstallFromContext(this.acquisitionContext)));
                 throw error;
             }
             else if(workingCommand.commandRoot === 'command')
             {
-                workingCommand = CommandExecutor.makeCommand(`open`, [`-W`, `${path.resolve(installerPath)}`]);
+                workingCommand = CommandExecutor.makeCommand(`open`, [`-W`, `"${path.resolve(installerPath)}"`]);
             }
 
-            const commandResult = await this.commandRunner.execute(
-                workingCommand
-            );
+            this.acquisitionContext.eventStream.post(new NetInstallerBeginExecutionEvent(`The OS X .NET Installer has been launched.`));
 
-            this.commandRunner.returnStatus = false;
-            return commandResult[0];
+            const commandResult = await this.commandRunner.execute(workingCommand, {timeout : this.acquisitionContext.timeoutSeconds * 1000});
+
+            this.acquisitionContext.eventStream.post(new NetInstallerEndExecutionEvent(`The OS X .NET Installer has closed.`));
+            this.handleTimeout(commandResult);
+
+            return commandResult.status;
         }
         else
         {
-            const command = `${path.resolve(installerPath)}`;
+            const command = `"${path.resolve(installerPath)}"`;
             let commandOptions : string[] = [];
             if(this.file.isElevated(this.acquisitionContext.eventStream))
             {
                 commandOptions = [`/quiet`, `/install`, `/norestart`];
             }
-            const commandResult = await this.commandRunner.execute(
-                CommandExecutor.makeCommand(command, commandOptions)
-            );
-            this.commandRunner.returnStatus = false;
-            return commandResult[0];
+            else
+            {
+                commandOptions = [`/passive`, `/install`, `/norestart`]
+            }
+
+            this.acquisitionContext.eventStream.post(new NetInstallerBeginExecutionEvent(`The Windows .NET Installer has been launched.`));
+            try
+            {
+                const commandResult = await this.commandRunner.execute(CommandExecutor.makeCommand(command, commandOptions, elevateVsCode), {timeout : this.acquisitionContext.timeoutSeconds * 1000});
+                this.handleTimeout(commandResult);
+                this.acquisitionContext.eventStream.post(new NetInstallerEndExecutionEvent(`The Windows .NET Installer has closed.`));
+                return commandResult.status;
+            }
+            catch(error : any)
+            {
+                // Remove this when https://github.com/typescript-eslint/typescript-eslint/issues/2728 is done
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                if((error?.message as string)?.includes('EPERM'))
+                {
+                    // Remove this when https://github.com/typescript-eslint/typescript-eslint/issues/2728 is done
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    error.message = `The installer does not have permission to execute. Please try running as an administrator. ${error?.message}.
+Permissions: ${JSON.stringify(await this.commandRunner.execute(CommandExecutor.makeCommand('icacls', [`"${installerPath}"`])))}`;
+                }
+                // Remove this when https://github.com/typescript-eslint/typescript-eslint/issues/2728 is done
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                else if((error?.message as string)?.includes('ENOENT'))
+                {
+                    // Remove this when https://github.com/typescript-eslint/typescript-eslint/issues/2728 is done
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    error.message = `The .NET Installation files were not found. Please try again. ${error?.message}`;
+                }
+                throw error;
+            }
         }
     }
 
@@ -248,7 +467,7 @@ Please correct your PATH variable or make sure the 'open' utility is installed s
      */
     private extractVersionsOutOfRegistryKeyStrings(registryQueryResult : string) : string[]
     {
-        if(registryQueryResult.includes('ERROR') || registryQueryResult === '')
+        if(registryQueryResult === '')
         {
                 return [];
         }
@@ -283,9 +502,12 @@ Please correct your PATH variable or make sure the 'open' utility is installed s
             ( // Side by side installs of the same major.minor and band can cause issues in some cases. So we decided to just not allow it unless upgrading to a newer patch version.
               // The installer can catch this but we can avoid unnecessary work this way,
               // and for windows the installer may never appear to the user. With this approach, we don't need to handle installer error codes.
-                Number(this.versionResolver.getMajorMinor(requestedVersion)) === Number(this.versionResolver.getMajorMinor(sdk)) &&
-                Number(this.versionResolver.getFeatureBandFromVersion(requestedVersion)) === Number(this.versionResolver.getFeatureBandFromVersion(sdk)) &&
-                Number(this.versionResolver.getFeatureBandPatchVersion(requestedVersion)) <= Number(this.versionResolver.getFeatureBandPatchVersion(sdk))
+                Number(versionUtils.getMajorMinor(requestedVersion, this.acquisitionContext.eventStream, this.acquisitionContext)) ===
+                    Number(versionUtils.getMajorMinor(sdk, this.acquisitionContext.eventStream, this.acquisitionContext)) &&
+                Number(versionUtils.getFeatureBandFromVersion(requestedVersion, this.acquisitionContext.eventStream, this.acquisitionContext)) ===
+                    Number(versionUtils.getFeatureBandFromVersion(sdk, this.acquisitionContext.eventStream, this.acquisitionContext)) &&
+                Number(versionUtils.getFeatureBandPatchVersion(requestedVersion, this.acquisitionContext.eventStream, this.acquisitionContext)) <=
+                    Number(versionUtils.getFeatureBandPatchVersion(sdk, this.acquisitionContext.eventStream, this.acquisitionContext))
             )
             {
                 return sdk;
@@ -308,16 +530,25 @@ Please correct your PATH variable or make sure the 'open' utility is installed s
         {
             const sdkInstallRecords64Bit = 'HKEY_LOCAL_MACHINE\\SOFTWARE\\dotnet\\Setup\\InstalledVersions\\x64\\sdk';
             const sdkInstallRecords32Bit = sdkInstallRecords64Bit.replace('x64', 'x86');
+            const sdkInstallRecordsArm64 = sdkInstallRecords64Bit.replace('x64', 'arm64');
 
-            const queries = [sdkInstallRecords32Bit, sdkInstallRecords64Bit];
-            for ( const query of queries)
+            const queries = [sdkInstallRecords32Bit, sdkInstallRecords64Bit, sdkInstallRecordsArm64];
+            for ( const query of queries )
             {
                 try
                 {
                     const registryQueryCommand = path.join(`${process.env.SystemRoot}`, `System32\\reg.exe`);
                     // /reg:32 is added because all keys on 64 bit machines are all put into the WOW node. They won't be on the WOW node on a 32 bit machine.
-                    const fullQuery = `${registryQueryCommand}`;
-                    const installRecordKeysOfXBit = await this.commandRunner.execute(CommandExecutor.makeCommand(registryQueryCommand, [`query`, `${query}`, `\/reg:32`]));
+                    const command = CommandExecutor.makeCommand(registryQueryCommand, [`query`, `${query}`, `\/reg:32`]);
+
+                    let installRecordKeysOfXBit = '';
+                    const registryLookup = (await this.commandRunner.execute(command));
+
+                    if(registryLookup.status === '0')
+                    {
+                        installRecordKeysOfXBit = registryLookup.stdout;
+                    }
+
                     const installedSdks = this.extractVersionsOutOfRegistryKeyStrings(installRecordKeysOfXBit);
                     // Append any newly found sdk versions
                     sdks = sdks.concat(installedSdks.filter((item) => sdks.indexOf(item) < 0));

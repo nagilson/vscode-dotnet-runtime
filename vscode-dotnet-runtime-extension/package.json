@@ -11,12 +11,12 @@
 	"author": "Microsoft Corporation",
 	"displayName": ".NET Install Tool",
 	"description": "This extension installs and manages different versions of the .NET SDK and Runtime.",
-	"appInsightsKey": "02dc18e0-7494-43b2-b2a3-18ada5fcb522",
+	"connectionString": "InstrumentationKey=02dc18e0-7494-43b2-b2a3-18ada5fcb522;IngestionEndpoint=https://westus2-0.in.applicationinsights.azure.com/;LiveEndpoint=https://westus2.livediagnostics.monitor.azure.com/;ApplicationId=e8e56970-a18a-4101-b7d1-1c5dd7c29eeb",
 	"icon": "images/dotnetIcon.png",
-	"version": "2.0.0",
+	"version": "2.2.1",
 	"publisher": "ms-dotnettools",
 	"engines": {
-		"vscode": "^1.74.0"
+		"vscode": "^1.81.1"
 	},
 	"categories": [
 		"Other"
@@ -35,12 +35,7 @@
 		"virtualWorkspaces": true
 	},
 	"activationEvents": [
-		"onCommand:dotnet.acquire",
-		"onCommand:dotnet.acquireStatus",
-		"onCommand:dotnet.acquireGlobalSDK",
-		"onCommand:dotnet.uninstallAll",
-		"onCommand:dotnet.showAcquisitionLog",
-		"onCommand:dotnet.ensureDotnetDependencies"
+		"onStartupFinished"
 	],
 	"main": "./dist/extension.js",
 	"types": "./dist/extension.d.ts",
@@ -49,6 +44,17 @@
 			{
 				"command": "dotnet.reportIssue",
 				"title": "Report an issue with the .NET Install Tool.",
+				"category": ".NET Install Tool"
+			},
+			{
+				"command": "dotnet.acquireGlobalSDKPublic",
+				"title": "Install the .NET SDK System-Wide.",
+				"category": ".NET Install Tool",
+				"enablement": "!dotnetAcquisitionExtension.isGlobalSDKUnsupported"
+			},
+			{
+				"command": "dotnet.uninstallPublic",
+				"title": "Uninstall .NET.",
 				"category": ".NET Install Tool"
 			}
 		],
@@ -60,6 +66,11 @@
 					"default": true,
 					"description": "Enable Telemetry for the .NET Install Tool. Restart VS Code to apply changes."
 				},
+				"dotnetAcquisitionExtension.enablePreviewFeatures": {
+					"type": "boolean",
+					"default": false,
+					"description": "Enable Preview Features for the Extension. Restart VS Code to apply changes."
+				},
 				"dotnetAcquisitionExtension.installTimeoutValue": {
 					"type": "number",
 					"default": 600,
@@ -67,60 +78,72 @@
 				},
 				"dotnetAcquisitionExtension.existingDotnetPath": {
 					"type": "array",
-					"description": "File Path to an existing installation of .NET. Used for both the .NET SDK and .NET Runtime.",
-					"examples": ["C:\\Program Files\\dotnet\\dotnet.exe", "/usr/local/share/dotnet/dotnet", "/usr/lib/dotnet/dotnet"]
+					"markdownDescription": "The path to an existing .NET host executable for an extension's code to run under, not for your project to run under.\nRestart VS Code to apply changes.\n\n⚠️ This is NOT the .NET Runtime that your project will use to run. Extensions such as `C#`, `C# DevKit`, and more have components written in .NET. This .NET PATH is the `dotnet.exe` that these extensions will use to run their code, not your code.\n\nUsing a path value in which .NET does not meet the requirements of a specific extension will cause that extension to fail.\n\n🚀 The version of .NET that is used for your project is determined by the .NET host, or dotnet.exe. The .NET host picks a runtime based on your project. To use a specific version of .NET for your project, install the .NET SDK using the `.NET Install Tool - Install SDK System-Wide` command, install .NET manually using [our instructions](https://dotnet.microsoft.com/download), or edit your PATH environment variable to point to a `dotnet.exe` that has an `/sdk/` folder with only one SDK.",
+					"description": "The path to an existing .NET host executable for an extension's code to run under, not for your project to run under.\nRestart VS Code to apply changes.\n\n⚠️ This is NOT the .NET Runtime that your project will use to run. Extensions such as 'C#', 'C# DevKit', and more have components written in .NET. This .NET PATH is the 'dotnet.exe' that these extensions will use to run their code, not your code.\n\nUsing a path value in which .NET does not meet the requirements of a specific extension will cause that extension to fail.\n\n🚀 The version of .NET that is used for your project is determined by the .NET host, or dotnet.exe. The .NET host picks a runtime based on your project. To use a specific version of .NET for your project, install the .NET SDK using the '.NET Install Tool - Install SDK System-Wide' command, use the instructions at https://dotnet.microsoft.com/download to manually install the .NET SDK, or edit your PATH environment variable to point to a 'dotnet.exe' that has an '/sdk/' folder with only one SDK.",
+					"examples": [
+						"C:\\Program Files\\dotnet\\dotnet.exe",
+						"/usr/local/share/dotnet/dotnet",
+						"/usr/lib/dotnet/dotnet"
+					]
+				},
+				"dotnetAcquisitionExtension.sharedExistingDotnetPath": {
+					"type": "string",
+					"description": "The path of the preexisting .NET Runtime you'd like to use for ALL extensions. Restart VS Code to apply changes.",
+					"examples": [
+						"C:\\Program Files\\dotnet\\dotnet.exe",
+						"/usr/local/share/dotnet/dotnet",
+						"/usr/lib/dotnet/dotnet"
+					]
 				},
 				"dotnetAcquisitionExtension.proxyUrl": {
 					"type": "string",
 					"description": "URL to a proxy if you use one, such as: https://proxy:port"
+				},
+				"dotnetAcquisitionExtension.allowInvalidPaths": {
+					"type": "boolean",
+					"description": "If you'd like to continue using a .NET path that is not meant to be used for an extension and may cause instability (please read above about the existingDotnetPath setting) then set this to true and restart."
 				}
 			}
 		}
 	},
 	"scripts": {
-		"vscode:prepublish": "npm run compile-all && npm install && webpack --mode production",
+		"vscode:prepublish": "npm run compile-all && npm install && webpack --mode production && dotnet build ../msbuild/signJs --property jsOutputPath=..\\..\\vscode-dotnet-runtime-extension\\dist -bl -v:normal",
 		"compile": "npm run clean && tsc -p ./",
 		"watch": "npm run compile && tsc -watch -p ./",
 		"test": "npm run compile --silent && node ./dist/test/functional/runTest.js",
 		"clean": "rimraf dist",
 		"compile-all": "cd ../vscode-dotnet-runtime-library && npm install && npm run compile && cd ../vscode-dotnet-runtime-extension && npm install && npm run compile",
-		"lint": "tslint -c ../tslint.json '../vscode-dotnet-runtime-library/src/**/*.ts' '../vscode-dotnet-runtime-extension/src/**/*.ts'",
+		"lint": "eslint -c .eslintrc.js --ext=.ts vscode-dotnet-runtime-library/src/**/*.ts vscode-dotnet-runtime-extension/src/**/*.ts --ignore-pattern \"**/test/\" --fix",
 		"webpack": "webpack --mode development"
 	},
 	"dependencies": {
-		"axios": "^1.3.4",
+		"@types/chai-as-promised": "^7.1.8",
+		"@vscode/test-electron": "^2.3.9",
+		"axios": "^1.7.4",
 		"axios-cache-interceptor": "^1.0.1",
 		"axios-retry": "^3.4.0",
 		"chai": "4.3.4",
-		"child_process": "^1.0.2",
-		"diff": ">=5.0.0",
 		"glob": "^7.2.0",
-		"got": "11.8.5",
-		"hmac-drbg": "^1.0.1",
 		"https-proxy-agent": "^7.0.2",
-		"is-online": "^9.0.1",
 		"mocha": "^9.1.3",
 		"open": "^8.4.0",
-		"public-ip": "5.0.0",
 		"rimraf": "3.0.2",
-		"safe-regex-test": "^1.0.0",
 		"shelljs": "^0.8.5",
-		"ts-loader": "^9.2.6",
-		"tslint": "^5.20.1",
-		"typescript": "4.4.4",
+		"ts-loader": "^9.5.1",
+		"typescript": "^5.5.4",
 		"vscode-dotnet-runtime-library": "file:../vscode-dotnet-runtime-library",
-		"vscode-test": "^1.6.1",
-		"yarn": "^1.22.19"
+		"webpack-permissions-plugin": "^1.0.9"
 	},
 	"devDependencies": {
 		"@types/chai": "^4.3.5",
 		"@types/mocha": "^9.0.0",
-		"@types/node": "16.11.7",
+		"@types/node": "^20.0.0",
 		"@types/rimraf": "3.0.2",
+		"@types/source-map-support": "^0.5.10",
 		"@types/vscode": "1.74.0",
-		"copy-webpack-plugin": "9.0.1",
-		"webpack": "5.88.2",
-		"webpack-cli": "4.9.1"
+		"copy-webpack-plugin": "^9.0.1",
+		"webpack": "^5.88.2",
+		"webpack-cli": "^4.9.1"
 	},
 	"__metadata": {
 		"id": "1aab81a1-b3d9-4aef-976b-577d5d90fe3f",

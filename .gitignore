@@ -3,10 +3,10 @@
 TestResults/
 .nuget/
 .build/
+msbuild/signJs/*.log
 .testPublish/
 *.sln.ide/
 _ReSharper.*/
-packages/
 artifacts/
 .build/
 PublishProfiles/
@@ -29,12 +29,12 @@ project.lock.json
 *.*sdf
 *.ipch
 *.js
+!.eslintrc.js
 *.d.ts
 *.js.map
 .build/
 .vs/
 launchSettings.json
-global.json
 BenchmarkDotNet.Artifacts/
 msbuild.binlog
 msbuild.log
@@ -46,7 +46,6 @@ install.*
 .vscode-test/
 *.vsix
 vscode-dotnet-runtime-library/install scripts/dotnet-install.*
-*/images/*
 vscode-dotnet-runtime-extension/LICENSE.txt
 vscode-dotnet-sdk-extension/LICENSE.txt
 .vscode/launch.json

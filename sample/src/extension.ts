@@ -7,13 +7,16 @@ import * as cp from 'child_process';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
+    DotnetInstallMode,
+    DotnetVersionSpecRequirement,
     IDotnetAcquireContext,
     IDotnetAcquireResult,
+    IDotnetFindPathContext,
     IDotnetListVersionsResult,
-    IDotnetVersion,
 } from 'vscode-dotnet-runtime-library';
-import * as runtimeExtension from 'vscode-dotnet-runtime';
-import * as sdkExtension from 'vscode-dotnet-sdk';
+import * as runtimeExtension from 'vscode-dotnet-runtime'; // comment this out when packing the extension
+import * as sdkExtension from 'vscode-dotnet-sdk'; // comment this out when packing the extension
+import { install } from 'source-map-support';
 
 export function activate(context: vscode.ExtensionContext) {
 
@@ -32,8 +35,8 @@ export function activate(context: vscode.ExtensionContext) {
     */
 
     const requestingExtensionId = 'ms-dotnettools.sample-extension';
-    runtimeExtension.activate(context);
-    sdkExtension.activate(context);
+    runtimeExtension.activate(context); // comment this out when packing the extension
+    sdkExtension.activate(context); // comment this out when packing the extension
 
 
     // --------------------------------------------------------------------------
@@ -76,7 +79,8 @@ ${stderr}`);
         }
     });
 
-    const sampleAcquireRegistration = vscode.commands.registerCommand('sample.dotnet.acquire', async (version) => {
+    async function callAcquireAPI(version : string | undefined, installMode : DotnetInstallMode | undefined)
+    {
         if (!version) {
             version = await vscode.window.showInputBox({
                 placeHolder: '3.1',
@@ -87,10 +91,18 @@ ${stderr}`);
 
         try {
             await vscode.commands.executeCommand('dotnet.showAcquisitionLog');
-            await vscode.commands.executeCommand('dotnet.acquire', { version, requestingExtensionId });
+            await vscode.commands.executeCommand('dotnet.acquire', { version, requestingExtensionId, mode: installMode });
         } catch (error) {
             vscode.window.showErrorMessage((error as Error).toString());
         }
+    }
+
+    const sampleAcquireRegistration = vscode.commands.registerCommand('sample.dotnet.acquire', async (version) => {
+        await callAcquireAPI(version, undefined);
+    });
+
+    const sampleAcquireASPNETRegistration = vscode.commands.registerCommand('sample.dotnet.acquireASPNET', async (version) => {
+        await callAcquireAPI(version, 'aspnetcore' );
     });
 
     const sampleAcquireStatusRegistration = vscode.commands.registerCommand('sample.dotnet.acquireStatus', async (version) => {
@@ -120,21 +132,34 @@ ${stderr}`);
         }
     });
 
-    const sampleConcurrentTest = vscode.commands.registerCommand('sample.dotnet.concurrentTest', async () => {
-        try {
+    async function acquireConcurrent(versions : [string, string, string], installMode? : DotnetInstallMode)
+    {
+        try
+        {
             vscode.commands.executeCommand('dotnet.showAcquisitionLog');
             const promises = [
-                vscode.commands.executeCommand('dotnet.acquire', { version: '2.0', requestingExtensionId }),
-                vscode.commands.executeCommand('dotnet.acquire', { version: '2.1', requestingExtensionId }),
-                vscode.commands.executeCommand('dotnet.acquire', { version: '2.2', requestingExtensionId })];
+                vscode.commands.executeCommand('dotnet.acquire', { version: versions[0], requestingExtensionId, mode: installMode }),
+                vscode.commands.executeCommand('dotnet.acquire', { version: versions[1], requestingExtensionId, mode: installMode }),
+                vscode.commands.executeCommand('dotnet.acquire', { version: versions[2], requestingExtensionId, mode: installMode })];
 
-            for (const promise of promises) {
+            for (const promise of promises)
+            {
                 // Await here so we can detect errors
                 await promise;
             }
-        } catch (error) {
+        } catch (error)
+        {
             vscode.window.showErrorMessage((error as Error).toString());
         }
+    }
+
+    const sampleConcurrentTest = vscode.commands.registerCommand('sample.dotnet.concurrentTest', async () => {
+        await acquireConcurrent(['2.0', '2.1', '2.2'], 'runtime');
+    });
+
+    const sampleConcurrentASPNETTest = vscode.commands.registerCommand('sample.dotnet.concurrentASPNETTest', async () => {
+        acquireConcurrent(['6.0', '8.0', '7.0'], 'runtime') // start this so we test concurrent types of runtime installs
+        await acquireConcurrent(['6.0', '8.0', '7.0'], 'aspnetcore');
     });
 
     const sampleShowAcquisitionLogRegistration = vscode.commands.registerCommand('sample.dotnet.showAcquisitionLog', async () => {
@@ -144,15 +169,6 @@ ${stderr}`);
             vscode.window.showErrorMessage((error as Error).toString());
         }
     });
-
-    context.subscriptions.push(
-        sampleHelloWorldRegistration,
-        sampleAcquireRegistration,
-        sampleAcquireStatusRegistration,
-        sampleDotnetUninstallAllRegistration,
-        sampleConcurrentTest,
-        sampleShowAcquisitionLogRegistration,
-    );
 
     const sampleGlobalSDKFromRuntimeRegistration = vscode.commands.registerCommand('sample.dotnet.acquireGlobalSDK', async (version) => {
         if (!version) {
@@ -165,8 +181,8 @@ ${stderr}`);
 
         try
         {
-            await vscode.commands.executeCommand('dotnet-sdk.showAcquisitionLog');
-            let commandContext : IDotnetAcquireContext = { version, requestingExtensionId, installType: 'global' };
+            await vscode.commands.executeCommand('dotnet.showAcquisitionLog');
+            let commandContext : IDotnetAcquireContext = { version: version, requestingExtensionId: requestingExtensionId, installType: 'global' };
             await vscode.commands.executeCommand('dotnet.acquireGlobalSDK', commandContext);
         }
         catch (error)
@@ -174,6 +190,48 @@ ${stderr}`);
             vscode.window.showErrorMessage((error as Error).toString());
         }
     });
+
+    const sampleFindPathRegistration = vscode.commands.registerCommand('sample.dotnet.findPath', async () =>
+    {
+        const version = await vscode.window.showInputBox(
+        {
+            placeHolder: '8.0',
+            value: '8.0',
+            prompt: 'The .NET runtime version.',
+        });
+
+        const arch = await vscode.window.showInputBox({
+            placeHolder: 'x64',
+            value: 'x64',
+            prompt: 'The .NET runtime architecture.',
+        });
+
+        const requirement = await vscode.window.showInputBox({
+            placeHolder: 'greater_than_or_equal',
+            value: 'greater_than_or_equal',
+            prompt: 'The condition to search for a requirement.',
+        });
+
+        let commandContext : IDotnetFindPathContext = { acquireContext: {version: version, requestingExtensionId: requestingExtensionId, architecture : arch, mode : 'runtime'} as IDotnetAcquireContext,
+        versionSpecRequirement: requirement as DotnetVersionSpecRequirement};
+
+        const result = await vscode.commands.executeCommand('dotnet.findPath', commandContext);
+
+        vscode.window.showInformationMessage(`.NET Path Discovered\n
+${JSON.stringify(result) ?? 'undefined'}`);
+    });
+
+    context.subscriptions.push(
+        sampleHelloWorldRegistration,
+        sampleAcquireRegistration,
+        sampleAcquireASPNETRegistration,
+        sampleAcquireStatusRegistration,
+        sampleDotnetUninstallAllRegistration,
+        sampleConcurrentTest,
+        sampleConcurrentASPNETTest,
+        sampleShowAcquisitionLogRegistration,
+        sampleFindPathRegistration,
+    );
 
     // --------------------------------------------------------------------------
 
@@ -208,7 +266,7 @@ ${stderr}`);
         try
         {
             await vscode.commands.executeCommand('dotnet-sdk.showAcquisitionLog');
-            let commandContext : IDotnetAcquireContext = { version, requestingExtensionId, installType: 'global' };
+            let commandContext : IDotnetAcquireContext = { version: version, requestingExtensionId: requestingExtensionId, installType: 'global' };
             await vscode.commands.executeCommand('dotnet-sdk.acquire', commandContext);
         }
         catch (error)
@@ -254,8 +312,8 @@ ${stderr}`);
 
     const sampleSDKrecommendedVersion = vscode.commands.registerCommand('sample.dotnet-sdk.recommendedVersion', async (getRuntimes : boolean) => {
         try {
-            const result : IDotnetVersion | undefined = await vscode.commands.executeCommand('dotnet-sdk.recommendedVersion', { listRuntimes: getRuntimes });
-            vscode.window.showInformationMessage(`Recommended SDK Version to Install: ${result?.version}`);
+            const result : IDotnetListVersionsResult | undefined = await vscode.commands.executeCommand('dotnet.recommendedVersion', { listRuntimes: getRuntimes });
+            vscode.window.showInformationMessage(`Recommended SDK Version to Install: ${result?.at(0)?.version}`);
         } catch (error) {
             vscode.window.showErrorMessage((error as Error).toString());
         }

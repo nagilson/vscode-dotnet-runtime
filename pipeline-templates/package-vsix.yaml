@@ -1,0 +1,86 @@
+parameters:
+  pool: ''
+  SignType: ''
+
+jobs:
+- job: ${{ parameters.pool.os }}_Package
+  pool:
+    ${{ if eq(parameters.useOneEngineeringPool, 'true') }}:
+        ${{ parameters.pool }}
+    ${{ else }}:
+        vmImage: ${{ parameters.pool.vmImage }}
+  displayName: '📦 Package and Publish'
+  dependsOn:
+  - ${{ parameters.pool.os }}_Build
+  - ESLint
+  condition: succeeded()
+  strategy:
+    matrix:
+      Runtime:
+        dir-name: 'vscode-dotnet-runtime-extension'
+        package-name: 'vscode-dotnet-runtime'
+      SDK:
+        dir-name: 'vscode-dotnet-sdk-extension'
+        package-name: 'vscode-dotnet-sdk'
+  templateContext:
+    outputs:
+    - output: pipelineArtifact
+      displayName: '📂 Publish .VSIX'
+      targetPath: '$(Build.ArtifactStagingDirectory)'
+      artifactName: '$(dir-name)'
+  steps:
+  - template: install-node.yaml
+  - bash: |
+      if ([ $(is-sdk-release) = 'True' ] && [ $(package-name) = 'vscode-dotnet-sdk' ]) || ([ $(is-runtime-release) = 'True' ] && [ $(package-name) = 'vscode-dotnet-runtime' ]); then
+        VERSION=`node -p "require('./package.json').version"`
+      else
+        VERSION_NUM=`node -p "require('./package.json').version"`
+        VERSION="$VERSION_NUM"
+      fi
+      npm version $VERSION --allow-same-version
+      echo "##vso[task.setvariable variable=version;isOutput=true]$VERSION"
+    name: GetVersion
+    displayName: '❓ Get Version'
+    workingDirectory: $(dir-name)
+  - ${{ if eq(parameters.useOneEngineeringPool, 'true') }}:
+    - template: prepare-signing.yaml
+      parameters:
+        SignType: ${{ parameters.SignType }}
+  - bash: |
+      npm install rimraf --reg https://registry.npmjs.org/ --verbose
+      npm install @vscode/vsce@latest -g --reg https://registry.npmjs.org/ --verbose
+      vsce package -o $(package-name)-$(GetVersion.version).vsix --ignoreFile ../.vscodeignore --yarn
+      cp $(package-name)-$(GetVersion.version).vsix ../packages/$(package-name)-$(GetVersion.version).vsix
+    displayName: 📦 Package Artifact
+    workingDirectory: $(dir-name)
+    env:
+      SignType: ${{ parameters.SignType }}
+  - script: dotnet build msbuild/signVsix -v:normal
+    displayName: 🖊️ Sign VSIXes
+    env:
+      SignType: ${{ parameters.SignType }}
+  - task: CmdLine@2
+    displayName: 🤌 Rename Signed VSIX
+    inputs:
+      script: rename ".\packages\$(package-name)-$(GetVersion.version).vsix" $(package-name)-$(GetVersion.version)-signed.vsix
+  - task: CopyFiles@2
+    displayName: '📩 Copy Artifact'
+    inputs:
+      SourceFolder: '$(Build.SourcesDirectory)'
+      Contents: '**\*.vsix'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+      flattenFolders: true
+  - task: CopyFiles@2
+    displayName: '🏗️ Copy Binlog'
+    inputs:
+      SourceFolder: '$(Build.SourcesDirectory)'
+      Contents: '**\*.binlog'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+      flattenFolders: false
+- ${{ if eq(parameters.useOneEngineeringPool, 'true') }}:
+  - template: publish.yaml
+    parameters:
+      pool: ${{ parameters.pool }}
+      SignType: ${{ parameters.SignType }}
+      version: $(GetVersion.version)
+      useOneEngineeringPool: true

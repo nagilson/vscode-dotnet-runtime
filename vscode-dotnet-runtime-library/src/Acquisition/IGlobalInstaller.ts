@@ -5,8 +5,10 @@
  * ------------------------------------------------------------------------------------------ */
 
 import path = require('path');
+import crypto = require('crypto')
 import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
 import { IUtilityContext } from '../Utils/IUtilityContext';
+import { DotnetInstall } from './DotnetInstall';
 
 export abstract class IGlobalInstaller {
 
@@ -18,9 +20,11 @@ export abstract class IGlobalInstaller {
         this.utilityContext = utilContext;
     }
 
-    public abstract installSDK() : Promise<string>
+    public abstract installSDK(install : DotnetInstall) : Promise<string>
 
-    public abstract getExpectedGlobalSDKPath(specificSDKVersionInstalled : string, installedArch : string) : Promise<string>
+    public abstract uninstallSDK(install : DotnetInstall) : Promise<string>
+
+    public abstract getExpectedGlobalSDKPath(specificSDKVersionInstalled : string, installedArch : string, macPathShouldExist? : boolean) : Promise<string>
 
     public abstract getGlobalSdkVersionsInstalledOnMachine() : Promise<Array<string>>;
 
@@ -28,8 +32,8 @@ export abstract class IGlobalInstaller {
      *
      * @returns The folder where global sdk installers will be downloaded onto the disk.
      */
-    public static getDownloadedInstallFilesFolder() : string
+    public static getDownloadedInstallFilesFolder(uniqueInstallerId : string) : string
     {
-        return path.join(__dirname, 'installers');
+        return path.join(__dirname, 'installers', crypto.createHash('sha256').update(uniqueInstallerId).digest('hex'));
     }
 }
