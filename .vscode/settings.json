@@ -5,10 +5,12 @@
         "APPDATA",
         "aspnet",
         "aspnetcore",
+        "componentgovernance",
         "distros",
         "HKCU",
         "HKEY",
         "norestart",
+        "policheck",
         "proccom",
         "programfiles",
         "REGHEXVALUE",
@@ -24,5 +26,5 @@
         "./vscode-dotnet-runtime-extension",
         "./vscode-dotnet-sdk-extension",
         "./sample"
-      ]
+    ]
 }
