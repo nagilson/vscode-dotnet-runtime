@@ -17,7 +17,7 @@ import
     DotnetLockReleasedEvent, DotnetWSLCheckEvent, EventBasedError
 } from '../EventStream/EventStreamEvents';
 import { IEvent } from '../EventStream/IEvent';
-import { CommandExecutor } from './CommandExecutor';
+import { CommandExecutorSingleton } from './CommandExecutor';
 import { ICommandExecutor } from './ICommandExecutor';
 import { IUtilityContext } from './IUtilityContext';
 
@@ -44,7 +44,7 @@ export async function loopWithTimeoutOnCond(sampleRatePerMs: number, durationToW
 /**
  * Returns true if the linux agent is running under WSL, else false.
  */
-export async function isRunningUnderWSL(acquisitionContext: IAcquisitionWorkerContext, utilityContext: IUtilityContext, executor?: ICommandExecutor): Promise<boolean>
+export async function isRunningUnderWSL(acquisitionContext: IAcquisitionWorkerContext, utilityContext: IUtilityContext): Promise<boolean>
 {
     // See https://github.com/microsoft/WSL/issues/4071 for evidence that we can rely on this behavior.
 
@@ -55,9 +55,8 @@ export async function isRunningUnderWSL(acquisitionContext: IAcquisitionWorkerCo
         return false;
     }
 
-    const command = CommandExecutor.makeCommand('grep', ['-i', 'Microsoft', '/proc/version']);
-    executor ??= new CommandExecutor(acquisitionContext, utilityContext);
-    const commandResult = await executor.execute(command, {}, false);
+    const command = CommandExecutorSingleton.makeCommand('grep', ['-i', 'Microsoft', '/proc/version']);
+    const commandResult = await CommandExecutorSingleton.getInstance().execute(command, acquisitionContext, utilityContext, {}, false);
 
     if (!commandResult || !commandResult.stdout)
     {
@@ -149,7 +148,7 @@ export async function getOSArch(executor: ICommandExecutor): Promise<string>
 {
     if (os.platform() === 'darwin')
     {
-        const findTrueArchCommand = CommandExecutor.makeCommand(`uname`, [`-p`]);
+        const findTrueArchCommand = CommandExecutorSingleton.makeCommand(`uname`, [`-p`]);
         return (await executor.execute(findTrueArchCommand, { dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS }, false)).stdout.toLowerCase().trim();
     }
 

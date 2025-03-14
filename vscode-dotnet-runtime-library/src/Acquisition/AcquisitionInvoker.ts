@@ -23,7 +23,7 @@ import
 } from '../EventStream/EventStreamEvents';
 
 import { TelemetryUtilities } from '../EventStream/TelemetryUtilities';
-import { CommandExecutor } from '../Utils/CommandExecutor';
+import { CommandExecutorSingleton } from '../Utils/CommandExecutor';
 import { timeoutConstants } from '../Utils/ErrorHandler';
 import { FileUtilities } from '../Utils/FileUtilities';
 import { InstallScriptAcquisitionWorker } from './InstallScriptAcquisitionWorker';
@@ -184,8 +184,8 @@ At dotnet-install.ps1:1189 char:5
 
         try
         {
-            const checkLanguageModeCmd = CommandExecutor.makeCommand(powershellReference, [`-command`, `$ExecutionContext.SessionState.LanguageMode`]);
-            const languageModeOutput = await new CommandExecutor(this.workerContext, this.utilityContext).execute(checkLanguageModeCmd, { cwd: path.resolve(__dirname), shell: true });
+            const checkLanguageModeCmd = CommandExecutorSingleton.makeCommand(powershellReference, [`-command`, `$ExecutionContext.SessionState.LanguageMode`]);
+            const languageModeOutput = await new CommandExecutorSingleton(this.workerContext, this.utilityContext).execute(checkLanguageModeCmd, { cwd: path.resolve(__dirname), shell: true });
             const languageMode = languageModeOutput.stdout.trim();
             return (languageMode === 'ConstrainedLanguage' || languageMode === 'NoLanguage');
         }
@@ -248,11 +248,11 @@ At dotnet-install.ps1:1189 char:5
 
         const possibleCommands = // create a bunch of commands that just return the index of the correct shell in powershell
             [
-                CommandExecutor.makeCommand('0', []),
-                CommandExecutor.makeCommand('1', []),
-                CommandExecutor.makeCommand('2', []),
-                CommandExecutor.makeCommand('3', []),
-                CommandExecutor.makeCommand('4', []),
+                CommandExecutorSingleton.makeCommand('0', []),
+                CommandExecutorSingleton.makeCommand('1', []),
+                CommandExecutorSingleton.makeCommand('2', []),
+                CommandExecutorSingleton.makeCommand('3', []),
+                CommandExecutorSingleton.makeCommand('4', []),
             ];
         const possiblePowershellPaths =
             [ // use shell as powershell and see if it passes or not. This is faster than doing it with the default shell, as that spawns a cmd to spawn a pwsh
@@ -264,7 +264,7 @@ At dotnet-install.ps1:1189 char:5
         try
         {
             // Check if PowerShell exists and is on the path.
-            command = await new CommandExecutor(this.workerContext, this.utilityContext).tryFindWorkingCommand(possibleCommands, possiblePowershellPaths);
+            command = await new CommandExecutorSingleton(this.workerContext, this.utilityContext).tryFindWorkingCommand(possibleCommands, possiblePowershellPaths);
             if (!command)
             {
                 knownError = true;

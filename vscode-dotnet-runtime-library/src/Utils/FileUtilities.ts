@@ -26,7 +26,7 @@ import
     FileToWipe,
     SuppressedAcquisitionError
 } from '../EventStream/EventStreamEvents';
-import { CommandExecutor } from './CommandExecutor';
+import { CommandExecutorSingleton } from './CommandExecutor';
 import { IFileUtilities } from './IFileUtilities';
 import { IUtilityContext } from './IUtilityContext';
 
@@ -274,12 +274,12 @@ export class FileUtilities extends IFileUtilities
      */
     public async isElevated(context: IAcquisitionWorkerContext, utilContext: IUtilityContext): Promise<boolean>
     {
-        const executor = new CommandExecutor(context, utilContext);
+        const executor = new CommandExecutorSingleton(context, utilContext);
         if (os.platform() !== 'win32')
         {
             try
             {
-                const commandResult = await executor.execute(CommandExecutor.makeCommand('id', ['-u']), { dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS }, false);
+                const commandResult = await executor.execute(CommandExecutorSingleton.makeCommand('id', ['-u']), { dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS }, false);
                 return commandResult.status === '0';
             }
             catch (error: any)
@@ -292,7 +292,7 @@ export class FileUtilities extends IFileUtilities
         try
         {
             // If we can execute this command on Windows then we have admin rights.
-            const _ = await executor.execute(CommandExecutor.makeCommand('net', ['session']), { 'stdio': 'ignore', dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS });
+            const _ = await executor.execute(CommandExecutorSingleton.makeCommand('net', ['session']), { 'stdio': 'ignore', dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS });
             return true;
         }
         catch (error: any)

@@ -23,7 +23,7 @@ import
     OSXOpenNotAvailableError,
     SuppressedAcquisitionError
 } from '../EventStream/EventStreamEvents';
-import { CommandExecutor } from '../Utils/CommandExecutor';
+import { CommandExecutorSingleton } from '../Utils/CommandExecutor';
 import { FileUtilities } from '../Utils/FileUtilities';
 import { getInstallFromContext } from '../Utils/InstallIdUtilities';
 import { WebRequestWorkerSingleton } from '../Utils/WebRequestWorkerSingleton';
@@ -78,7 +78,7 @@ We cannot verify our .NET file host at this time. Please try again later or inst
         this.installerUrl = installerUrl;
         this.installingVersion = installingVersion;
         this.installerHash = installerHash;
-        this.commandRunner = executor ?? new CommandExecutor(context, utilContext);
+        this.commandRunner = executor ?? new CommandExecutorSingleton(context, utilContext);
         this.versionResolver = new VersionResolver(context);
         this.file = new FileUtilities();
         this.webWorker = WebRequestWorkerSingleton.getInstance();
@@ -218,7 +218,7 @@ This report should be made at https://github.com/dotnet/vscode-dotnet-runtime/is
 
                     const command = `${path.resolve(installerFile)}`;
                     const uninstallArgs = ['/uninstall', '/passive', '/norestart'];
-                    const commandResult = await this.commandRunner.execute(CommandExecutor.makeCommand(command, uninstallArgs), { timeout: this.acquisitionContext.timeoutSeconds * 1000 }, false);
+                    const commandResult = await this.commandRunner.execute(CommandExecutorSingleton.makeCommand(command, uninstallArgs), { timeout: this.acquisitionContext.timeoutSeconds * 1000 }, false);
                     this.handleTimeout(commandResult);
 
                     return commandResult.status;
@@ -226,7 +226,7 @@ This report should be made at https://github.com/dotnet/vscode-dotnet-runtime/is
                 else
                 {
                     const macPath = await this.getMacPath();
-                    const command = CommandExecutor.makeCommand(`rm`, [`-rf`, `${path.join(path.dirname(macPath), 'sdk', install.version)}`, `&&`,
+                    const command = CommandExecutorSingleton.makeCommand(`rm`, [`-rf`, `${path.join(path.dirname(macPath), 'sdk', install.version)}`, `&&`,
                         `rm`, `-rf`, `${path.join(path.dirname(macPath), 'sdk-manifests', install.version)}`], true);
 
                     const commandResult = await this.commandRunner.execute(command, { timeout: this.acquisitionContext.timeoutSeconds * 1000 }, false);
@@ -266,7 +266,7 @@ This report should be made at https://github.com/dotnet/vscode-dotnet-runtime/is
         {
             if (os.platform() === 'win32') // Windows does not have chmod +x ability with nodejs.
             {
-                const permissionsCommand = CommandExecutor.makeCommand('icacls', [`"${installerPath}"`, '/grant:r', `"%username%":F`, '/t', '/c']);
+                const permissionsCommand = CommandExecutorSingleton.makeCommand('icacls', [`"${installerPath}"`, '/grant:r', `"%username%":F`, '/t', '/c']);
                 const commandRes = await this.commandRunner.execute(permissionsCommand, { dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS }, false);
                 if (commandRes.stderr !== '')
                 {
@@ -338,7 +338,7 @@ Please try again, or download the .NET Installer file yourself. You may also rep
             else if (error?.message?.includes('EPERM'))
             {
                 this.acquisitionContext.eventStream.post(new DotnetFileIntegrityFailureEvent(`The file ${installerFile} did not have the correct permissions scope to be assessed.
-Permissions: ${JSON.stringify(await this.commandRunner.execute(CommandExecutor.makeCommand('icacls', [`"${installerFile}"`]), { dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS }, false))}`));
+Permissions: ${JSON.stringify(await this.commandRunner.execute(CommandExecutorSingleton.makeCommand('icacls', [`"${installerFile}"`]), { dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS }, false))}`));
             }
             return this.userChoosesToContinueWithInvalidHash();
         }
@@ -425,8 +425,8 @@ If you were waiting for the install to succeed, please extend the timeout settin
             // The -W flag makes it so we wait for the installer .pkg to exit, though we are unable to get the exit code.
             const possibleCommands =
                 [
-                    CommandExecutor.makeCommand(`command`, [`-v`, `open`]),
-                    CommandExecutor.makeCommand(`/usr/bin/open`, [])
+                    CommandExecutorSingleton.makeCommand(`command`, [`-v`, `open`]),
+                    CommandExecutorSingleton.makeCommand(`/usr/bin/open`, [])
                 ];
 
             let workingCommand = await this.commandRunner.tryFindWorkingCommand(possibleCommands);
@@ -440,7 +440,7 @@ Please correct your PATH variable or make sure the 'open' utility is installed s
             }
             else if (workingCommand.commandRoot === 'command')
             {
-                workingCommand = CommandExecutor.makeCommand(`open`, [`-W`, `"${path.resolve(installerPath)}"`]);
+                workingCommand = CommandExecutorSingleton.makeCommand(`open`, [`-W`, `"${path.resolve(installerPath)}"`]);
             }
 
             this.acquisitionContext.eventStream.post(new NetInstallerBeginExecutionEvent(`The OS X .NET Installer has been launched.`));
@@ -468,7 +468,7 @@ Please correct your PATH variable or make sure the 'open' utility is installed s
             this.acquisitionContext.eventStream.post(new NetInstallerBeginExecutionEvent(`The Windows .NET Installer has been launched.`));
             try
             {
-                const commandResult = await this.commandRunner.execute(CommandExecutor.makeCommand(command, commandOptions, elevateVsCode), { timeout: this.acquisitionContext.timeoutSeconds * 1000 }, false);
+                const commandResult = await this.commandRunner.execute(CommandExecutorSingleton.makeCommand(command, commandOptions, elevateVsCode), { timeout: this.acquisitionContext.timeoutSeconds * 1000 }, false);
                 this.handleTimeout(commandResult);
                 this.acquisitionContext.eventStream.post(new NetInstallerEndExecutionEvent(`The Windows .NET Installer has closed.`));
                 return commandResult.status;
@@ -482,7 +482,7 @@ Please correct your PATH variable or make sure the 'open' utility is installed s
                     // Remove this when https://github.com/typescript-eslint/typescript-eslint/issues/2728 is done
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     error.message = `The installer does not have permission to execute. Please try running as an administrator. ${error?.message}.
-Permissions: ${JSON.stringify(await this.commandRunner.execute(CommandExecutor.makeCommand('icacls', [`"${installerPath}"`]), { dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS }, false))}`;
+Permissions: ${JSON.stringify(await this.commandRunner.execute(CommandExecutorSingleton.makeCommand('icacls', [`"${installerPath}"`]), { dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS }, false))}`;
                 }
                 // Remove this when https://github.com/typescript-eslint/typescript-eslint/issues/2728 is done
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access

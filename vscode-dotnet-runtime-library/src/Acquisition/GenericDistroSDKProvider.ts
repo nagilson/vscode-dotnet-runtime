@@ -6,7 +6,7 @@
 import * as path from 'path';
 
 import { DotnetVersionResolutionError, EventBasedError } from '../EventStream/EventStreamEvents';
-import { CommandExecutor } from '../Utils/CommandExecutor';
+import { CommandExecutorSingleton } from '../Utils/CommandExecutor';
 import { READ_SYMLINK_CACHE_DURATION_MS } from './CacheTimeConstants';
 import { DotnetInstallMode } from './DotnetInstallMode';
 import { IDistroDotnetSDKProvider } from './IDistroDotnetSDKProvider';
@@ -24,7 +24,7 @@ export class GenericDistroSDKProvider extends IDistroDotnetSDKProvider
         let commands = this.myDistroCommands(this.installCommandKey);
         const sdkPackage = await this.myDotnetVersionPackageName(fullySpecifiedVersion, installType);
 
-        commands = CommandExecutor.replaceSubstringsInCommands(commands, this.missingPackageNameKey, sdkPackage);
+        commands = CommandExecutorSingleton.replaceSubstringsInCommands(commands, this.missingPackageNameKey, sdkPackage);
         const updateCommandsResult = (await this.commandRunner.executeMultipleCommands(commands.slice(0, -1), null, false))[0];
         const installCommandResult = (await this.commandRunner.execute(commands.slice(-1)[0], null, false)).status;
 
@@ -48,7 +48,7 @@ export class GenericDistroSDKProvider extends IDistroDotnetSDKProvider
         if (commandResult[0] && this.resolvePathAsSymlink)
         {
             let symLinkReadCommand = this.myDistroCommands(this.readSymbolicLinkCommandKey);
-            symLinkReadCommand = CommandExecutor.replaceSubstringsInCommands(symLinkReadCommand, this.missingPathKey, commandResult[0].stdout);
+            symLinkReadCommand = CommandExecutorSingleton.replaceSubstringsInCommands(symLinkReadCommand, this.missingPathKey, commandResult[0].stdout);
             const resolvedPath = (await this.commandRunner.executeMultipleCommands(symLinkReadCommand, { dotnetInstallToolCacheTtlMs: READ_SYMLINK_CACHE_DURATION_MS }, false))[0].stdout;
             if (resolvedPath)
             {
@@ -63,7 +63,7 @@ export class GenericDistroSDKProvider extends IDistroDotnetSDKProvider
     {
         let command = this.myDistroCommands(this.packageLookupCommandKey);
         const sdkPackage = await this.myDotnetVersionPackageName(this.JsonDotnetVersion(fullySpecifiedDotnetVersion), installType);
-        command = CommandExecutor.replaceSubstringsInCommands(command, this.missingPackageNameKey, sdkPackage);
+        command = CommandExecutorSingleton.replaceSubstringsInCommands(command, this.missingPackageNameKey, sdkPackage);
         const commandResult = (await this.commandRunner.executeMultipleCommands(command, null, false))[0];
 
         return commandResult.status === '0';
@@ -83,7 +83,7 @@ export class GenericDistroSDKProvider extends IDistroDotnetSDKProvider
     {
         let command = this.myDistroCommands(this.updateCommandKey);
         const sdkPackage = await this.myDotnetVersionPackageName(versionToUpgrade, installType);
-        command = CommandExecutor.replaceSubstringsInCommands(command, this.missingPackageNameKey, sdkPackage);
+        command = CommandExecutorSingleton.replaceSubstringsInCommands(command, this.missingPackageNameKey, sdkPackage);
         const commandResult = (await this.commandRunner.executeMultipleCommands(command, null, false))[0].status;
 
         return commandResult[0];
@@ -93,7 +93,7 @@ export class GenericDistroSDKProvider extends IDistroDotnetSDKProvider
     {
         let command = this.myDistroCommands(this.uninstallCommandKey);
         const sdkPackage = await this.myDotnetVersionPackageName(versionToUninstall, installType);
-        command = CommandExecutor.replaceSubstringsInCommands(command, this.missingPackageNameKey, sdkPackage);
+        command = CommandExecutorSingleton.replaceSubstringsInCommands(command, this.missingPackageNameKey, sdkPackage);
         const commandResult = (await this.commandRunner.executeMultipleCommands(command, null, false))[0];
 
         return commandResult.status;

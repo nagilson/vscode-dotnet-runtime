@@ -3,17 +3,17 @@
 *  The .NET Foundation licenses this file to you under the MIT license.
 *--------------------------------------------------------------------------------------------*/
 
-import { IDotnetAcquireContext } from '../IDotnetAcquireContext';
-import { IUtilityContext } from '../Utils/IUtilityContext';
-import { CommandExecutor } from '../Utils/CommandExecutor';
 import { IAcquisitionWorkerContext } from '../Acquisition/IAcquisitionWorkerContext';
-import { IWindowDisplayWorker } from '../EventStream/IWindowDisplayWorker';
-import { IDotnetAcquireResult } from '../IDotnetAcquireResult';
-import { IExistingPaths } from '../IExtensionContext';
-import { ICommandExecutor } from '../Utils/ICommandExecutor';
-import { DotnetConditionValidator } from './DotnetConditionValidator';
-import { IDotnetFindPathContext } from '../IDotnetFindPathContext';
 import { DotnetVersionSpecRequirement } from '../DotnetVersionSpecRequirement';
+import { IWindowDisplayWorker } from '../EventStream/IWindowDisplayWorker';
+import { IDotnetAcquireContext } from '../IDotnetAcquireContext';
+import { IDotnetAcquireResult } from '../IDotnetAcquireResult';
+import { IDotnetFindPathContext } from '../IDotnetFindPathContext';
+import { IExistingPaths } from '../IExtensionContext';
+import { CommandExecutorSingleton } from '../Utils/CommandExecutor';
+import { ICommandExecutor } from '../Utils/ICommandExecutor';
+import { IUtilityContext } from '../Utils/IUtilityContext';
+import { DotnetConditionValidator } from './DotnetConditionValidator';
 import { DotnetPathFinder } from './DotnetPathFinder';
 
 const badExistingPathWarningMessage = `The 'existingDotnetPath' setting was set, but it did not meet the requirements for this extension to run properly.
@@ -27,7 +27,7 @@ export class ExistingPathResolver
 
     public constructor(private readonly workerContext: IAcquisitionWorkerContext, private readonly utilityContext: IUtilityContext, private executor?: ICommandExecutor)
     {
-        this.executor ??= new CommandExecutor(this.workerContext, this.utilityContext);
+        this.executor ??= new CommandExecutorSingleton(this.workerContext, this.utilityContext);
     }
 
     public async resolveExistingPath(existingPaths: IExistingPaths | undefined, extensionId: string | undefined, windowDisplayWorker: IWindowDisplayWorker, requirement?: DotnetVersionSpecRequirement): Promise<IDotnetAcquireResult | undefined>

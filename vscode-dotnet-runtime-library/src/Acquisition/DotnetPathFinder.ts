@@ -3,7 +3,7 @@
 *  The .NET Foundation licenses this file to you under the MIT license.
 *--------------------------------------------------------------------------------------------*/
 
-import { CommandExecutor } from '../Utils/CommandExecutor';
+import { CommandExecutorSingleton } from '../Utils/CommandExecutor';
 import { ICommandExecutor } from '../Utils/ICommandExecutor';
 import { IUtilityContext } from '../Utils/IUtilityContext';
 import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
@@ -42,7 +42,7 @@ export class DotnetPathFinder implements IDotnetPathFinder
 
     public constructor(private readonly workerContext: IAcquisitionWorkerContext, private readonly utilityContext: IUtilityContext, private executor?: ICommandExecutor, private file?: IFileUtilities)
     {
-        this.executor ??= new CommandExecutor(this.workerContext, this.utilityContext);
+        this.executor ??= new CommandExecutorSingleton(this.workerContext, this.utilityContext);
         this.file ??= new FileUtilities();
     }
 
@@ -123,20 +123,20 @@ export class DotnetPathFinder implements IDotnetPathFinder
         this.workerContext.eventStream.post(new DotnetFindPathLookupPATH(`Looking up .NET on the path. Process.env.path: ${process.env.PATH}`));
         if (os.platform() === 'win32')
         {
-            const winPath = await this.executor?.execute(CommandExecutor.makeCommand('echo', ['%PATH%']), { dotnetInstallToolCacheTtlMs: DOTNET_INFORMATION_CACHE_DURATION_MS },
+            const winPath = await this.executor?.execute(CommandExecutorSingleton.makeCommand('echo', ['%PATH%']), { dotnetInstallToolCacheTtlMs: DOTNET_INFORMATION_CACHE_DURATION_MS },
                 false);
             this.workerContext.eventStream.post(new DotnetFindPathLookupPATH(`Execution Path (Win): ${winPath?.stdout}`));
         }
         else
         {
-            const unixPath = await this.executor?.execute(CommandExecutor.makeCommand('env', []), { dotnetInstallToolCacheTtlMs: DOTNET_INFORMATION_CACHE_DURATION_MS },
+            const unixPath = await this.executor?.execute(CommandExecutorSingleton.makeCommand('env', []), { dotnetInstallToolCacheTtlMs: DOTNET_INFORMATION_CACHE_DURATION_MS },
                 false);
             // Log the default shell state
             this.workerContext.eventStream.post(new DotnetFindPathLookupPATH(`Execution Path (Unix-Default-Shell): ${unixPath?.stdout}`));
 
             if (!(options.shell === '/bin/bash'))
             {
-                const bashPath = await this.executor?.execute(CommandExecutor.makeCommand('env', []), { shell: 'bin/bash', dotnetInstallToolCacheTtlMs: SYS_CMD_SEARCH_CACHE_DURATION_MS }, false);
+                const bashPath = await this.executor?.execute(CommandExecutorSingleton.makeCommand('env', []), { shell: 'bin/bash', dotnetInstallToolCacheTtlMs: SYS_CMD_SEARCH_CACHE_DURATION_MS }, false);
                 this.workerContext.eventStream.post(new DotnetFindPathLookupPATH(`Execution Path (Unix Bash): ${bashPath?.stdout}`));
             }
         }
@@ -146,22 +146,22 @@ export class DotnetPathFinder implements IDotnetPathFinder
         {
             pathLocatorCommand = (await this.executor?.tryFindWorkingCommand([
                 // We have to give the command an argument to return status 0, and the only thing its guaranteed to find is itself :)
-                CommandExecutor.makeCommand('where', ['where']),
-                CommandExecutor.makeCommand('where.exe', ['where.exe']),
-                CommandExecutor.makeCommand('%SystemRoot%\\System32\\where.exe', ['%SystemRoot%\\System32\\where.exe']), // if PATH is corrupted
-                CommandExecutor.makeCommand('C:\\Windows\\System32\\where.exe', ['C:\\Windows\\System32\\where.exe']) // in case SystemRoot is corrupted, best effort guess
+                CommandExecutorSingleton.makeCommand('where', ['where']),
+                CommandExecutorSingleton.makeCommand('where.exe', ['where.exe']),
+                CommandExecutorSingleton.makeCommand('%SystemRoot%\\System32\\where.exe', ['%SystemRoot%\\System32\\where.exe']), // if PATH is corrupted
+                CommandExecutorSingleton.makeCommand('C:\\Windows\\System32\\where.exe', ['C:\\Windows\\System32\\where.exe']) // in case SystemRoot is corrupted, best effort guess
             ], options))?.commandRoot ?? 'where';
         }
         else
         {
             pathLocatorCommand = (await this.executor?.tryFindWorkingCommand([
-                CommandExecutor.makeCommand('which', ['which']),
-                CommandExecutor.makeCommand('/usr/bin/which', ['/usr/bin/which']), // if PATH is corrupted
+                CommandExecutorSingleton.makeCommand('which', ['which']),
+                CommandExecutorSingleton.makeCommand('/usr/bin/which', ['/usr/bin/which']), // if PATH is corrupted
             ], options))?.commandRoot ?? 'which';
         }
 
         options.dotnetInstallToolCacheTtlMs = DOTNET_INFORMATION_CACHE_DURATION_MS;
-        const findCommand = CommandExecutor.makeCommand(pathLocatorCommand, ['dotnet']);
+        const findCommand = CommandExecutorSingleton.makeCommand(pathLocatorCommand, ['dotnet']);
         const dotnetsOnPATH = (await this.executor?.execute(findCommand, options, false))?.stdout.split('\n').map(x => x.trim()).filter(x => x !== '');
         if (dotnetsOnPATH && (dotnetsOnPATH?.length ?? 0) > 0)
         {

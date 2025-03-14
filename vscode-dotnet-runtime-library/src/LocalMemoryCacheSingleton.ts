@@ -7,7 +7,7 @@
 import * as nodeCache from 'node-cache';
 import { IAcquisitionWorkerContext } from "./Acquisition/IAcquisitionWorkerContext";
 import { CacheClearEvent, CacheGetEvent, CachePutEvent } from "./EventStream/EventStreamEvents";
-import { CommandExecutor } from "./Utils/CommandExecutor";
+import { CommandExecutorSingleton } from "./Utils/CommandExecutor";
 import { CommandExecutorCommand } from "./Utils/CommandExecutorCommand";
 import { CommandExecutorResult } from "./Utils/CommandExecutorResult";
 
@@ -103,7 +103,7 @@ export class LocalMemoryCacheSingleton
     private cacheableCommandToKey(key: CacheableCommand): string
     {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        return `${CommandExecutor.prettifyCommandExecutorCommand(key.command)}${JSON.stringify(key.options, function replacer(k, v)
+        return `${CommandExecutorSingleton.prettifyCommandExecutorCommand(key.command)}${JSON.stringify(key.options, function replacer(k, v)
         {
             // Replace the dotnetInstallToolCacheTtlMs key with undefined so that it doesn't affect the cache key.
             if (k === 'dotnetInstallToolCacheTtlMs')

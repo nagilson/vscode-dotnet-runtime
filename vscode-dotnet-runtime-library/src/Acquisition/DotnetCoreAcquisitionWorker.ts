@@ -45,7 +45,7 @@ import { TelemetryUtilities } from '../EventStream/TelemetryUtilities';
 import { IDotnetAcquireResult } from '../IDotnetAcquireResult';
 import { IExtensionState } from '../IExtensionState';
 import { IVSCodeExtensionContext } from '../IVSCodeExtensionContext';
-import { CommandExecutor } from '../Utils/CommandExecutor';
+import { CommandExecutorSingleton } from '../Utils/CommandExecutor';
 import { Debugging } from '../Utils/Debugging';
 import { FileUtilities } from '../Utils/FileUtilities';
 import { IFileUtilities } from '../Utils/IFileUtilities';
@@ -396,8 +396,8 @@ To keep your .NET version up to date, please reconnect to the internet at your s
 
     private async sdkIsFound(context: IAcquisitionWorkerContext, version: string): Promise<boolean>
     {
-        const executor = new CommandExecutor(context, this.utilityContext);
-        const listSDKsCommand = CommandExecutor.makeCommand('dotnet', ['--list-sdks']);
+        const executor = new CommandExecutorSingleton(context, this.utilityContext);
+        const listSDKsCommand = CommandExecutorSingleton.makeCommand('dotnet', ['--list-sdks']);
         const result = await executor.execute(listSDKsCommand, { dotnetInstallToolCacheTtlMs: DOTNET_INFORMATION_CACHE_DURATION_MS }, false);
 
         if (result.status !== '0')
@@ -536,7 +536,7 @@ ${WinMacGlobalInstaller.InterpretExitCode(installerResult)}`), install);
 
         await InstallTrackerSingleton.getInstance(context.eventStream, context.extensionState).reclassifyInstallingVersionToInstalled(context, install);
 
-        await new CommandExecutor(context, this.utilityContext).endSudoProcessMaster(context.eventStream);
+        await new CommandExecutorSingleton(context, this.utilityContext).endSudoProcessMaster(context.eventStream);
         context.eventStream.post(new DotnetGlobalAcquisitionCompletionEvent(`The version ${JSON.stringify(install)} completed successfully.`));
         return dotnetPath;
     }
@@ -656,7 +656,7 @@ Other dependents remain.`));
                     new WinMacGlobalInstaller(context, this.utilityContext, installingVersion, await globalInstallerResolver.getInstallerUrl(), await globalInstallerResolver.getInstallerHash());
 
                 const ok = await installer.uninstallSDK(install);
-                await new CommandExecutor(context, this.utilityContext).endSudoProcessMaster(context.eventStream);
+                await new CommandExecutorSingleton(context, this.utilityContext).endSudoProcessMaster(context.eventStream);
                 if (ok === '0')
                 {
                     context.eventStream.post(new DotnetUninstallCompleted(`Uninstalled .NET ${install.installId}.`));
@@ -668,7 +668,7 @@ Other dependents remain.`));
         }
         catch (error: any)
         {
-            await new CommandExecutor(context, this.utilityContext).endSudoProcessMaster(context.eventStream);
+            await new CommandExecutorSingleton(context, this.utilityContext).endSudoProcessMaster(context.eventStream);
             context.eventStream.post(new SuppressedAcquisitionError(error, `The attempt to uninstall .NET ${install.installId} failed - was .NET in use?`));
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             return error?.message ?? '1';

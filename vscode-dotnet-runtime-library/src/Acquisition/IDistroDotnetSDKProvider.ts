@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import path = require('path');
 
 import { DotnetAcquisitionDistroUnknownError, DotnetVersionResolutionError, EventBasedError, EventCancellationError, SuppressedAcquisitionError } from '../EventStream/EventStreamEvents';
-import { CommandExecutor } from '../Utils/CommandExecutor';
+import { CommandExecutorSingleton } from '../Utils/CommandExecutor';
 import { CommandExecutorCommand } from '../Utils/CommandExecutorCommand';
 import { ICommandExecutor } from '../Utils/ICommandExecutor';
 import { IUtilityContext } from '../Utils/IUtilityContext';
@@ -91,7 +91,7 @@ If you would like to contribute to the list of supported distros, please visit: 
         }
 
         const validCommandSet = this.getAllValidCommands();
-        this.commandRunner = executor ?? new CommandExecutor(context, utilContext, validCommandSet);
+        this.commandRunner = executor ?? new CommandExecutorSingleton(context, utilContext, validCommandSet);
     }
 
     /**
@@ -210,7 +210,7 @@ If you would like to contribute to the list of supported distros, please visit: 
             for (const packageName of packageSet[installType])
             {
                 let command = this.myDistroCommands(this.searchCommandKey);
-                command = CommandExecutor.replaceSubstringsInCommands(command, this.missingPackageNameKey, packageName);
+                command = CommandExecutorSingleton.replaceSubstringsInCommands(command, this.missingPackageNameKey, packageName);
 
                 const packageIsAvailableResult = (await this.commandRunner.executeMultipleCommands(command, null, false))[0];
                 packageIsAvailableResult.stdout = packageIsAvailableResult.stdout.trim();
@@ -331,14 +331,14 @@ If you would like to contribute to the list of supported distros, please visit: 
         {
             if (command.commandParts.slice(-1)[0] !== this.missingPackageNameKey)
             {
-                validCommands.push(`"${CommandExecutor.prettifyCommandExecutorCommand(command, false)}"`);
+                validCommands.push(`"${CommandExecutorSingleton.prettifyCommandExecutorCommand(command, false)}"`);
             }
             else
             {
                 for (const packageName of this.allPackages())
                 {
-                    const newCommand = CommandExecutor.replaceSubstringsInCommands([command], this.missingPackageNameKey, packageName)[0];
-                    validCommands.push(`"${CommandExecutor.prettifyCommandExecutorCommand(newCommand, false)}"`);
+                    const newCommand = CommandExecutorSingleton.replaceSubstringsInCommands([command], this.missingPackageNameKey, packageName)[0];
+                    validCommands.push(`"${CommandExecutorSingleton.prettifyCommandExecutorCommand(newCommand, false)}"`);
                 }
             }
         }

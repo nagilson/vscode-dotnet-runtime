@@ -28,7 +28,7 @@ import { ITelemetryReporter } from '../../EventStream/TelemetryObserver';
 import { IExtensionConfiguration, ILocalExistingPath } from '../../IExtensionContext';
 import { IExtensionState } from '../../IExtensionState';
 import { IVSCodeExtensionContext } from '../../IVSCodeExtensionContext';
-import { CommandExecutor } from '../../Utils/CommandExecutor';
+import { CommandExecutorSingleton } from '../../Utils/CommandExecutor';
 import { CommandExecutorCommand } from '../../Utils/CommandExecutorCommand';
 import { CommandExecutorResult } from '../../Utils/CommandExecutorResult';
 import { FileUtilities } from '../../Utils/FileUtilities';
@@ -367,7 +367,7 @@ export class MockAcquisitionInvoker extends AcquisitionInvoker
  */
 export class MockCommandExecutor extends ICommandExecutor
 {
-    private trueExecutor: CommandExecutor;
+    private trueExecutor: CommandExecutorSingleton;
     public fakeReturnValue = { status: '', stderr: '', stdout: '' };
     public attemptedCommand = '';
 
@@ -379,12 +379,12 @@ export class MockCommandExecutor extends ICommandExecutor
     constructor(acquisitionContext: IAcquisitionWorkerContext, utilContext: IUtilityContext)
     {
         super(acquisitionContext, utilContext);
-        this.trueExecutor = new CommandExecutor(acquisitionContext, utilContext);
+        this.trueExecutor = new CommandExecutorSingleton(acquisitionContext, utilContext);
     }
 
     public async execute(command: CommandExecutorCommand, options: object | null = null, terminalFailure?: boolean): Promise<CommandExecutorResult>
     {
-        this.attemptedCommand = CommandExecutor.prettifyCommandExecutorCommand(command);
+        this.attemptedCommand = CommandExecutorSingleton.prettifyCommandExecutorCommand(command);
 
         if (this.shouldActuallyExecuteCommand(command))
         {
@@ -513,73 +513,73 @@ export class MockDistroProvider extends IDistroDotnetSDKProvider
 
     public installDotnet(fullySpecifiedVersion: string): Promise<string>
     {
-        this.commandRunner.execute(CommandExecutor.makeCommand('install', [`dotnet`]));
+        this.commandRunner.execute(CommandExecutorSingleton.makeCommand('install', [`dotnet`]));
         return Promise.resolve(this.installReturnValue);
     }
 
     public getInstalledDotnetSDKVersions(): Promise<string[]>
     {
-        this.commandRunner.execute(CommandExecutor.makeCommand(`get`, [`sdk`, `versions`]));
+        this.commandRunner.execute(CommandExecutorSingleton.makeCommand(`get`, [`sdk`, `versions`]));
         return Promise.resolve(this.installedSDKsReturnValue);
     }
 
     public getInstalledDotnetRuntimeVersions(): Promise<string[]>
     {
-        this.commandRunner.execute(CommandExecutor.makeCommand(`get`, [`runtime`, `versions`]));
+        this.commandRunner.execute(CommandExecutorSingleton.makeCommand(`get`, [`runtime`, `versions`]));
         return Promise.resolve(this.installedRuntimesReturnValue);
     }
 
     public getInstalledGlobalDotnetPathIfExists(): Promise<string | null>
     {
-        this.commandRunner.execute(CommandExecutor.makeCommand(`global`, [`path`]));
+        this.commandRunner.execute(CommandExecutorSingleton.makeCommand(`global`, [`path`]));
         return Promise.resolve(this.globalPathReturnValue);
     }
 
     public getInstalledGlobalDotnetVersionIfExists(): Promise<string | null>
     {
-        this.commandRunner.execute(CommandExecutor.makeCommand(`global`, [`version`]));
+        this.commandRunner.execute(CommandExecutorSingleton.makeCommand(`global`, [`version`]));
         return Promise.resolve(this.globalVersionReturnValue);
     }
 
     public getExpectedDotnetDistroFeedInstallationDirectory(): string
     {
-        this.commandRunner.execute(CommandExecutor.makeCommand(`distro`, [`feed`, `dir`]));
+        this.commandRunner.execute(CommandExecutorSingleton.makeCommand(`distro`, [`feed`, `dir`]));
         return this.distroFeedReturnValue;
     }
 
     public getExpectedDotnetMicrosoftFeedInstallationDirectory(): string
     {
-        this.commandRunner.execute(CommandExecutor.makeCommand(`microsoft`, [`feed`, `dir`]));
+        this.commandRunner.execute(CommandExecutorSingleton.makeCommand(`microsoft`, [`feed`, `dir`]));
         return this.microsoftFeedReturnValue;
     }
 
     public dotnetPackageExistsOnSystem(fullySpecifiedVersion: string): Promise<boolean>
     {
-        this.commandRunner.execute(CommandExecutor.makeCommand(`package`, [`check`]));
+        this.commandRunner.execute(CommandExecutorSingleton.makeCommand(`package`, [`check`]));
         return Promise.resolve(this.packageExistsReturnValue);
     }
 
     public getDotnetVersionSupportStatus(fullySpecifiedVersion: string): Promise<DotnetDistroSupportStatus>
     {
-        this.commandRunner.execute(CommandExecutor.makeCommand(`support`, [`status`]));
+        this.commandRunner.execute(CommandExecutorSingleton.makeCommand(`support`, [`status`]));
         return Promise.resolve(this.supportStatusReturnValue);
     }
 
     public getRecommendedDotnetVersion(installType: DotnetInstallMode): Promise<string>
     {
-        this.commandRunner.execute(CommandExecutor.makeCommand(`recommended`, [`version`]));
+        this.commandRunner.execute(CommandExecutorSingleton.makeCommand(`recommended`, [`version`]));
         return Promise.resolve(this.recommendedVersionReturnValue);
     }
 
     public upgradeDotnet(versionToUpgrade: string): Promise<string>
     {
-        this.commandRunner.execute(CommandExecutor.makeCommand(`upgrade`, [`update`, `dotnet`]));
+        this.commandRunner.execute(CommandExecutorSingleton.makeCommand(`upgrade`, [`update`, `dotnet`]));
         return Promise.resolve(this.upgradeReturnValue);
     }
 
     public uninstallDotnet(versionToUninstall: string): Promise<string>
     {
-        this.commandRunner.execute(CommandExecutor.makeCommand(`uninstall`, [`dotnet`]));
+        this.commandRunner.execute(CommandExecutorSingleton.makeCommand(`uninstall`, [`dotnet`]));
         return Promise.resolve(this.uninstallReturnValue);
     }
 

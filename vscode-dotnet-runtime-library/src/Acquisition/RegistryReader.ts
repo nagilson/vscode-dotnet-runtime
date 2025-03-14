@@ -5,13 +5,13 @@
 import * as os from 'os';
 import * as path from 'path';
 
-import { IRegistryReader } from "./IRegistryReader";
-import { CommandExecutor } from '../Utils/CommandExecutor';
+import { CommandExecutorSingleton } from '../Utils/CommandExecutor';
+import { CommandExecutorResult } from '../Utils/CommandExecutorResult';
 import { ICommandExecutor } from '../Utils/ICommandExecutor';
 import { IUtilityContext } from '../Utils/IUtilityContext';
-import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
-import { CommandExecutorResult } from '../Utils/CommandExecutorResult';
 import { DOTNET_INFORMATION_CACHE_DURATION_MS } from './CacheTimeConstants';
+import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
+import { IRegistryReader } from "./IRegistryReader";
 
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 
@@ -22,7 +22,7 @@ export class RegistryReader extends IRegistryReader
     constructor(context: IAcquisitionWorkerContext, utilContext: IUtilityContext, executor: ICommandExecutor | null = null)
     {
         super();
-        this.commandRunner = executor ?? new CommandExecutor(context, utilContext);
+        this.commandRunner = executor ?? new CommandExecutorSingleton(context, utilContext);
     }
 
     /**
@@ -130,7 +130,7 @@ export class RegistryReader extends IRegistryReader
                 queryParameters = [...queryParameters, `/v`, `${querySingleValue}`];
             }
 
-            const command = CommandExecutor.makeCommand(registryQueryCommand, queryParameters);
+            const command = CommandExecutorSingleton.makeCommand(registryQueryCommand, queryParameters);
             const registryLookup = (await this.commandRunner.execute(command, { dotnetInstallToolCacheTtlMs: DOTNET_INFORMATION_CACHE_DURATION_MS }, false));
             return registryLookup;
         }

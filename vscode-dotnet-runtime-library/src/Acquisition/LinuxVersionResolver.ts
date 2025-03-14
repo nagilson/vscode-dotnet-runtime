@@ -15,7 +15,7 @@ import
     EventBasedError,
     EventCancellationError
 } from '../EventStream/EventStreamEvents';
-import { CommandExecutor } from '../Utils/CommandExecutor';
+import { CommandExecutorSingleton } from '../Utils/CommandExecutor';
 import { GenericDistroSDKProvider } from './GenericDistroSDKProvider';
 import { RedHatDistroSDKProvider } from './RedHatDistroSDKProvider';
 import { VersionResolver } from './VersionResolver';
@@ -101,7 +101,7 @@ Or, install Red Hat Enterprise Linux 8.0 or Red Hat Enterprise Linux 9.0 from ht
     constructor(private readonly workerContext: IAcquisitionWorkerContext, private readonly utilityContext: IUtilityContext,
         executor: ICommandExecutor | null = null, distroProvider: IDistroDotnetSDKProvider | null = null)
     {
-        this.commandRunner = executor ?? new CommandExecutor(this.workerContext, this.utilityContext);
+        this.commandRunner = executor ?? new CommandExecutorSingleton(this.workerContext, this.utilityContext);
         this.versionResolver = new VersionResolver(workerContext);
         if (distroProvider)
         {
@@ -122,7 +122,7 @@ Or, install Red Hat Enterprise Linux 8.0 or Red Hat Enterprise Linux 9.0 from ht
             return this.distro;
         }
 
-        const commandResult = await this.commandRunner.execute(CommandExecutor.makeCommand(`cat`, [`/etc/os-release`]), { dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS });
+        const commandResult = await this.commandRunner.execute(CommandExecutorSingleton.makeCommand(`cat`, [`/etc/os-release`]), { dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS });
         const distroNameKey = 'NAME';
         const distroVersionKey = 'VERSION_ID';
 
