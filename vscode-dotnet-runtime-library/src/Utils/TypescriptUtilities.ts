@@ -65,6 +65,7 @@ export async function isRunningUnderWSL(acquisitionContext: IAcquisitionWorkerCo
     return true;
 }
 
+
 /*
 @remarks lockPath should be a full path to a shared lock file ending in .lock (that may or may not exist on disk) and the file content does not matter
 */
