@@ -404,12 +404,15 @@ ${stderr}`));
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             options.shell ??= true;
 
+            options.env ??= { ...process.env };
+            //options.env.DOTNET_CLI_UI_LANGUAGE ??= 'en-US';
+
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             options.encoding = 'utf8';
         }
         else
         {
-            options = { cwd: path.resolve(__dirname), shell: true, encoding: 'utf8' };
+            options = { cwd: path.resolve(__dirname), shell: true, encoding: 'utf8', env: { ...process.env, DOTNET_CLI_UI_LANGfUAGE: 'en-US' } };
         }
 
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
