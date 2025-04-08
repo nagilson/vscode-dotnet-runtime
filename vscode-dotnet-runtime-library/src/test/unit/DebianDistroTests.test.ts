@@ -6,11 +6,14 @@
 import * as chai from 'chai';
 import * as os from 'os';
 import { DebianDistroSDKProvider } from '../../Acquisition/DebianDistroSDKProvider';
+import { DistroVersionPair } from '../../Acquisition/DistroVersionPair';
+import { DotnetDistroSupportStatus } from '../../Acquisition/DotnetDistroSupportStatus';
 import { DotnetInstallMode } from '../../Acquisition/DotnetInstallMode';
-import { DistroVersionPair, DotnetDistroSupportStatus, LinuxVersionResolver } from '../../Acquisition/LinuxVersionResolver';
-import { MockCommandExecutor } from '../mocks/MockObjects';
-import { getDistroInfo, getMockAcquisitionContext, getMockUtilityContext } from './TestUtility';
+import { LinuxVersionResolver } from '../../Acquisition/LinuxVersionResolver';
 import { DEBIAN_DISTRO_INFO_KEY } from '../../Acquisition/StringConstants';
+import { MockCommandExecutor } from '../mocks/MockObjects';
+import { getDistroInfo } from './LinuxTestUtility';
+import { getMockAcquisitionContext, getMockUtilityContext } from './TestUtility';
 const assert = chai.assert;
 const standardTimeoutTime = 100000;
 

@@ -5,13 +5,14 @@
  * ------------------------------------------------------------------------------------------ */
 import * as chai from 'chai';
 import * as os from 'os';
-import { DistroVersionPair, LinuxVersionResolver } from '../../Acquisition/LinuxVersionResolver';
+import { DistroVersionPair } from '../../Acquisition/DistroVersionPair';
+import { LinuxVersionResolver } from '../../Acquisition/LinuxVersionResolver';
+import { RED_HAT_DISTRO_INFO_KEY, UBUNTU_DISTRO_INFO_KEY } from '../../Acquisition/StringConstants';
 import { LocalMemoryCacheSingleton } from '../../LocalMemoryCacheSingleton';
 import { WebRequestWorkerSingleton } from '../../Utils/WebRequestWorkerSingleton';
 import { MockCommandExecutor, MockDistroProvider } from '../mocks/MockObjects';
 import * as util from './TestUtility';
 import { getMockAcquisitionContext, getMockUtilityContext } from './TestUtility';
-import { RED_HAT_DISTRO_INFO_KEY, UBUNTU_DISTRO_INFO_KEY } from '../../Acquisition/StringConstants';
 const assert = chai.assert;
 
 

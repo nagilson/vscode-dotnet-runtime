@@ -5,18 +5,18 @@
  * ------------------------------------------------------------------------------------------ */
 import { ICommandExecutor } from '../Utils/ICommandExecutor';
 import { IUtilityContext } from '../Utils/IUtilityContext';
+import { DistroVersionPair } from './DistroVersionPair';
 import { GenericDistroSDKProvider } from './GenericDistroSDKProvider';
 import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
-import { DistroVersionPair } from './LinuxVersionResolver';
 
 export class RedHatDistroSDKProvider extends GenericDistroSDKProvider
 {
-    constructor(distroVersion : DistroVersionPair, context : IAcquisitionWorkerContext, utilContext : IUtilityContext, executor : ICommandExecutor | null = null)
+    constructor(distroVersion: DistroVersionPair, context: IAcquisitionWorkerContext, utilContext: IUtilityContext, executor: ICommandExecutor | null = null)
     {
         super(distroVersion, context, utilContext, executor);
     }
 
-    protected myVersionDetails() : any
+    protected myVersionDetails(): any
     {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         const distroVersions = this.distroJson[this.distroVersion.distro][this.distroVersionsKey];

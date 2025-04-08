@@ -13,7 +13,7 @@ import { DOTNET_INFORMATION_CACHE_DURATION_MS, SYS_CMD_SEARCH_CACHE_DURATION_MS 
 import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
 import { IDotnetConditionValidator } from './IDotnetConditionValidator';
 import { IDotnetListInfo } from './IDotnetListInfo';
-import * as versionUtils from './VersionUtilities';
+import { getFeatureBandFromVersion, getMajor, getMinor, getRuntimePatchVersionString, getSDKCompleteBandAndPatchVersionString, isPreviewVersion } from './VersionUtilities';
 
 type simplifiedVersionSpec = 'equal' | 'greater_than_or_equal' | 'less_than_or_equal' |
     'latestPatch' | 'latestFeature';
@@ -153,10 +153,10 @@ Please set the PATH to a dotnet host that matches the architecture ${requirement
 
     public stringVersionMeetsRequirement(availableVersion: string, requestedVersion: string, requirement: IDotnetFindPathContext): boolean
     {
-        const availableMajor = Number(versionUtils.getMajor(availableVersion, this.workerContext.eventStream, this.workerContext));
-        const requestedMajor = Number(versionUtils.getMajor(requestedVersion, this.workerContext.eventStream, this.workerContext));
-        const requestedPatchStr: string | null = requirement.acquireContext.mode !== 'sdk' ? versionUtils.getRuntimePatchVersionString(requestedVersion, this.workerContext.eventStream, this.workerContext)
-            : versionUtils.getSDKCompleteBandAndPatchVersionString(requestedVersion, this.workerContext.eventStream, this.workerContext);
+        const availableMajor = Number(getMajor(availableVersion, this.workerContext.eventStream, this.workerContext));
+        const requestedMajor = Number(getMajor(requestedVersion, this.workerContext.eventStream, this.workerContext));
+        const requestedPatchStr: string | null = requirement.acquireContext.mode !== 'sdk' ? getRuntimePatchVersionString(requestedVersion, this.workerContext.eventStream, this.workerContext)
+            : getSDKCompleteBandAndPatchVersionString(requestedVersion, this.workerContext.eventStream, this.workerContext);
         const requestedPatch = requestedPatchStr ? Number(requestedPatchStr) : null;
 
         const adjustedVersionSpec: simplifiedVersionSpec = [requirement.versionSpecRequirement].map(x =>
@@ -174,17 +174,17 @@ Please set the PATH to a dotnet host that matches the architecture ${requirement
 
         if (availableMajor === requestedMajor)
         {
-            const availableMinor = Number(versionUtils.getMinor(availableVersion, this.workerContext.eventStream, this.workerContext));
-            const requestedMinor = Number(versionUtils.getMinor(requestedVersion, this.workerContext.eventStream, this.workerContext));
+            const availableMinor = Number(getMinor(availableVersion, this.workerContext.eventStream, this.workerContext));
+            const requestedMinor = Number(getMinor(requestedVersion, this.workerContext.eventStream, this.workerContext));
 
             if (availableMinor === requestedMinor && requestedPatch)
             {
                 const availablePatchStr: string | null = requirement.acquireContext.mode !== 'sdk' ?
-                    versionUtils.getRuntimePatchVersionString(availableVersion, this.workerContext.eventStream, this.workerContext)
+                    getRuntimePatchVersionString(availableVersion, this.workerContext.eventStream, this.workerContext)
                     :
                     (() =>
                     {
-                        const band = versionUtils.getSDKCompleteBandAndPatchVersionString(availableVersion, this.workerContext.eventStream, this.workerContext);
+                        const band = getSDKCompleteBandAndPatchVersionString(availableVersion, this.workerContext.eventStream, this.workerContext);
                         if (band)
                         {
                             return band;
@@ -196,7 +196,7 @@ Please set the PATH to a dotnet host that matches the architecture ${requirement
                 const availableBandStr: string | null = requirement.acquireContext.mode === 'sdk' ?
                     (() =>
                     {
-                        const featureBand = versionUtils.getFeatureBandFromVersion(availableVersion, this.workerContext.eventStream, this.workerContext, false);
+                        const featureBand = getFeatureBandFromVersion(availableVersion, this.workerContext.eventStream, this.workerContext, false);
                         if (featureBand)
                         {
                             return featureBand;
@@ -216,7 +216,7 @@ Please set the PATH to a dotnet host that matches the architecture ${requirement
                     case 'less_than_or_equal':
                         return availablePatch! <= requestedPatch;
                     case 'latestPatch':
-                        const requestedBandStr = requirement.acquireContext.mode === 'sdk' ? versionUtils.getFeatureBandFromVersion(requestedVersion, this.workerContext.eventStream, this.workerContext, false) ?? null : null;
+                        const requestedBandStr = requirement.acquireContext.mode === 'sdk' ? getFeatureBandFromVersion(requestedVersion, this.workerContext.eventStream, this.workerContext, false) ?? null : null;
                         const requestedBand = requestedBandStr ? Number(requestedBandStr) : null;
                         return availablePatch! >= requestedPatch && (availableBand ? availableBand === requestedBand : true);
                 }
@@ -263,7 +263,7 @@ Please set the PATH to a dotnet host that matches the architecture ${requirement
     {
         if (requirement.rejectPreviews === true)
         {
-            return !versionUtils.isPreviewVersion(availableVersion, this.workerContext.eventStream, this.workerContext);
+            return !isPreviewVersion(availableVersion, this.workerContext.eventStream, this.workerContext);
         }
         return true;
     }

@@ -6,7 +6,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { AcquisitionInvoker } from '../../Acquisition/AcquisitionInvoker';
+import { DistroVersionPair } from '../../Acquisition/DistroVersionPair';
 import { DotnetCoreAcquisitionWorker } from '../../Acquisition/DotnetCoreAcquisitionWorker';
+import { DotnetDistroSupportStatus } from '../../Acquisition/DotnetDistroSupportStatus';
 import { DotnetInstall, GetDotnetInstallInfo } from '../../Acquisition/DotnetInstall';
 import { DotnetInstallMode } from '../../Acquisition/DotnetInstallMode';
 import { GenericDistroSDKProvider } from '../../Acquisition/GenericDistroSDKProvider';
@@ -18,7 +20,6 @@ import { IInstallationValidator } from '../../Acquisition/IInstallationValidator
 import { InstallScriptAcquisitionWorker } from '../../Acquisition/InstallScriptAcquisitionWorker';
 import { InstallTrackerSingleton } from '../../Acquisition/InstallTrackerSingleton';
 import { InstallationGraveyard } from '../../Acquisition/InstallationGraveyard';
-import { DistroVersionPair, DotnetDistroSupportStatus } from '../../Acquisition/LinuxVersionResolver';
 import { VersionResolver } from '../../Acquisition/VersionResolver';
 import { IEventStream } from '../../EventStream/EventStream';
 import { DotnetAcquisitionCompleted, EventBasedError, TestAcquireCalled } from '../../EventStream/EventStreamEvents';

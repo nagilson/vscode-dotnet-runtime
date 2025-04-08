@@ -7,6 +7,8 @@ import * as os from 'os';
 import * as path from 'path';
 import rimraf = require('rimraf');
 
+import { promisify } from 'util';
+import { IEventStream } from '../EventStream/EventStream';
 import
 {
     DotnetAcquisitionAlreadyInstalled,
@@ -37,10 +39,6 @@ import
     EventCancellationError,
     SuppressedAcquisitionError
 } from '../EventStream/EventStreamEvents';
-import * as versionUtils from './VersionUtilities';
-
-import { promisify } from 'util';
-import { IEventStream } from '../EventStream/EventStream';
 import { TelemetryUtilities } from '../EventStream/TelemetryUtilities';
 import { IDotnetAcquireResult } from '../IDotnetAcquireResult';
 import { IExtensionState } from '../IExtensionState';
@@ -76,6 +74,7 @@ import
 import { InstallTrackerSingleton } from './InstallTrackerSingleton';
 import { LinuxGlobalInstaller } from './LinuxGlobalInstaller';
 import { GLOBAL_INSTALL_STATE_MODIFIER_LOCK } from './StringConstants';
+import { getMajorMinor } from './VersionUtilities';
 import { WinMacGlobalInstaller } from './WinMacGlobalInstaller';
 
 
@@ -161,8 +160,8 @@ export class DotnetCoreAcquisitionWorker implements IDotnetCoreAcquisitionWorker
             if (install.dotnetInstall.installMode === possibleInstallWithSameMajorMinor.installMode &&
                 install.dotnetInstall.architecture === possibleInstallWithSameMajorMinor.architecture &&
                 install.dotnetInstall.isGlobal === possibleInstallWithSameMajorMinor.isGlobal &&
-                versionUtils.getMajorMinor(install.dotnetInstall.version, context.eventStream, context) ===
-                versionUtils.getMajorMinor(possibleInstallWithSameMajorMinor.version, context.eventStream, context))
+                getMajorMinor(install.dotnetInstall.version, context.eventStream, context) ===
+                getMajorMinor(possibleInstallWithSameMajorMinor.version, context.eventStream, context))
             {
                 // Requested version has already been installed.
                 const dotnetExePath = install.dotnetInstall.isGlobal ?
@@ -425,7 +424,7 @@ To keep your .NET version up to date, please reconnect to the internet at your s
         if (os.platform() === 'linux' && context?.acquisitionContext?.mode === 'sdk' && context.acquisitionContext?.installType === 'global')
         {
             // There is a bug where the version marked in the folder / install is not latest if ubuntu is out of date for global installs
-            return result.stdout.includes(versionUtils.getMajorMinor(version, context.eventStream, context));
+            return result.stdout.includes(getMajorMinor(version, context.eventStream, context));
         }
 
         return result.stdout.includes(version);

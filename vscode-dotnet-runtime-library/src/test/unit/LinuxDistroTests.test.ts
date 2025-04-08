@@ -5,15 +5,17 @@
  * ------------------------------------------------------------------------------------------ */
 import * as chai from 'chai';
 import * as os from 'os';
+import { DistroVersionPair } from '../../Acquisition/DistroVersionPair';
+import { DotnetDistroSupportStatus } from '../../Acquisition/DotnetDistroSupportStatus';
 import { DotnetInstallMode } from '../../Acquisition/DotnetInstallMode';
 import { GenericDistroSDKProvider } from '../../Acquisition/GenericDistroSDKProvider';
-import { DistroVersionPair, DotnetDistroSupportStatus } from '../../Acquisition/LinuxVersionResolver';
-import * as versionUtils from '../../Acquisition/VersionUtilities';
+import { UBUNTU_DISTRO_INFO_KEY } from '../../Acquisition/StringConstants';
+import { getMajorMinor } from '../../Acquisition/VersionUtilities';
 import { LocalMemoryCacheSingleton } from '../../LocalMemoryCacheSingleton';
 import { WebRequestWorkerSingleton } from '../../Utils/WebRequestWorkerSingleton';
 import { MockCommandExecutor } from '../mocks/MockObjects';
-import { UBUNTU_DISTRO_INFO_KEY } from '../../Acquisition/StringConstants';
-import { getLatestLinuxDotnet, getLinuxSupportedDotnetSDKVersion, getMockAcquisitionContext, getMockUtilityContext } from './TestUtility';
+import { getLatestLinuxDotnet, getLinuxSupportedDotnetSDKVersion } from './LinuxTestUtility';
+import { getMockAcquisitionContext, getMockUtilityContext } from './TestUtility';
 const assert = chai.assert;
 const standardTimeoutTime = 100000;
 
@@ -49,7 +51,7 @@ suite('Linux Distro Logic Unit Tests', function ()
         {
             const recVersion = await provider.getRecommendedDotnetVersion(installType);
             assert.equal(mockExecutor.attemptedCommand,
-                `apt-cache -o DPkg::Lock::Timeout=180 search --names-only ^dotnet-sdk-${versionUtils.getMajorMinor(getLatestLinuxDotnet(), acquisitionContext.eventStream, acquisitionContext)}$`, 'Searched for the newest package last with regex'); // this may fail if test not exec'd first
+                `apt-cache -o DPkg::Lock::Timeout=180 search --names-only ^dotnet-sdk-${getMajorMinor(getLatestLinuxDotnet(), acquisitionContext.eventStream, acquisitionContext)}$`, 'Searched for the newest package last with regex'); // this may fail if test not exec'd first
             // the data is cached so --version may not be executed.
             assert.equal(recVersion, await getLinuxSupportedDotnetSDKVersion(acquisitionContext), 'Resolved the most recent available version : will eventually break if the mock data is not updated');
         }
@@ -62,7 +64,7 @@ suite('Linux Distro Logic Unit Tests', function ()
             // assert this passes : we don't want the test to be reliant on machine state for whether the package exists or not, so don't check output
             await provider.dotnetPackageExistsOnSystem(mockVersion, installType);
             const version = await getLinuxSupportedDotnetSDKVersion(acquisitionContext);
-            assert.equal(mockExecutor.attemptedCommand, `dpkg -l dotnet-sdk-${versionUtils.getMajorMinor(version, acquisitionContext.eventStream, acquisitionContext)}`);
+            assert.equal(mockExecutor.attemptedCommand, `dpkg -l dotnet-sdk-${getMajorMinor(version, acquisitionContext.eventStream, acquisitionContext)}`);
         }
     }).timeout(standardTimeoutTime);
 
@@ -178,7 +180,7 @@ Microsoft.NETCore.App 7.0.5 [/usr/lib/dotnet/shared/Microsoft.NETCore.App]`, std
         if (shouldRun)
         {
             await provider.installDotnet(mockVersion, installType);
-            assert.equal(mockExecutor.attemptedCommand, `sudo apt-get -o DPkg::Lock::Timeout=180 install -y dotnet-sdk-${versionUtils.getMajorMinor(mockVersion, acquisitionContext.eventStream, acquisitionContext)}`);
+            assert.equal(mockExecutor.attemptedCommand, `sudo apt-get -o DPkg::Lock::Timeout=180 install -y dotnet-sdk-${getMajorMinor(mockVersion, acquisitionContext.eventStream, acquisitionContext)}`);
         }
     }).timeout(standardTimeoutTime);
 
@@ -187,7 +189,7 @@ Microsoft.NETCore.App 7.0.5 [/usr/lib/dotnet/shared/Microsoft.NETCore.App]`, std
         if (shouldRun)
         {
             await provider.uninstallDotnet(mockVersion, installType);
-            assert.equal(mockExecutor.attemptedCommand, `sudo apt-get -o DPkg::Lock::Timeout=180 remove -y dotnet-sdk-${versionUtils.getMajorMinor(mockVersion, acquisitionContext.eventStream, acquisitionContext)}`);
+            assert.equal(mockExecutor.attemptedCommand, `sudo apt-get -o DPkg::Lock::Timeout=180 remove -y dotnet-sdk-${getMajorMinor(mockVersion, acquisitionContext.eventStream, acquisitionContext)}`);
         }
     }).timeout(standardTimeoutTime);
 
@@ -196,7 +198,7 @@ Microsoft.NETCore.App 7.0.5 [/usr/lib/dotnet/shared/Microsoft.NETCore.App]`, std
         if (shouldRun)
         {
             await provider.upgradeDotnet(mockVersion, installType);
-            assert.equal(mockExecutor.attemptedCommand, `sudo apt-get -o DPkg::Lock::Timeout=180 upgrade -y dotnet-sdk-${versionUtils.getMajorMinor(mockVersion, acquisitionContext.eventStream, acquisitionContext)}`);
+            assert.equal(mockExecutor.attemptedCommand, `sudo apt-get -o DPkg::Lock::Timeout=180 upgrade -y dotnet-sdk-${getMajorMinor(mockVersion, acquisitionContext.eventStream, acquisitionContext)}`);
         }
     }).timeout(standardTimeoutTime * 1000);
 });

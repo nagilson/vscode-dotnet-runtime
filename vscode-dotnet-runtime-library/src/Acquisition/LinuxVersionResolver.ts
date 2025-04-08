@@ -22,48 +22,16 @@ import { getInstallFromContext } from '../Utils/InstallIdUtilities';
 import { IUtilityContext } from '../Utils/IUtilityContext';
 import { SYSTEM_INFORMATION_CACHE_DURATION_MS } from './CacheTimeConstants';
 import { DebianDistroSDKProvider } from './DebianDistroSDKProvider';
+import { DistroVersionPair } from './DistroVersionPair';
+import { DotnetDistroSupportStatus } from './DotnetDistroSupportStatus';
 import { DotnetInstallMode } from './DotnetInstallMode';
 import { GenericDistroSDKProvider } from './GenericDistroSDKProvider';
 import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
 import { IDistroDotnetSDKProvider } from './IDistroDotnetSDKProvider';
 import { RedHatDistroSDKProvider } from './RedHatDistroSDKProvider';
-import { VersionResolver } from './VersionResolver';
-import * as versionUtils from './VersionUtilities';
 import { DEBIAN_DISTRO_INFO_KEY, RED_HAT_DISTRO_INFO_KEY, UBUNTU_DISTRO_INFO_KEY } from './StringConstants';
-
-
-/**
- * An enumeration type representing all distros with their versions that we recognize.
- * @remarks
- * Each . in a semver should be represented with _.
- * The string representation of the enum should contain exactly one space that separates the distro, then the version.
- */
-export interface DistroVersionPair
-{
-    distro: string,
-    version: string
-}
-
-/**
- * @remarks
- * Distro support means that the distro provides a dotnet sdk package by default without intervention.
- *
- * Microsoft support means that Microsoft provides packages for the distro but it's not in the distro maintained feed.
- * For Microsoft support, we currently don't support installs of these feeds yet.
- *
- * Partial support does not have any change in behavior from unsupported currently and can mean whatever the distro maintainer wants.
- * But it generally means that the distro and microsoft both do not officially support that version of dotnet.
- *
- * Unknown is a placeholder for development testing and future potential implementation and should not be used by contributors.
- */
-export const enum DotnetDistroSupportStatus
-{
-    Unsupported = 'UNSUPPORTED',
-    Distro = 'DISTRO',
-    Microsoft = 'MICROSOFT',
-    Partial = 'PARTIAL',
-    Unknown = 'UNKNOWN'
-}
+import { VersionResolver } from './VersionResolver';
+import { getFeatureBandFromVersion, getFeatureBandPatchVersion, getMajorMinor } from './VersionUtilities';
 
 
 /**
@@ -313,16 +281,16 @@ If you experience issues, please reach out on https://github.com/dotnet/vscode-d
         if (existingInstall)
         {
             const existingGlobalInstallSDKVersion = await this.distroSDKProvider!.getInstalledGlobalDotnetVersionIfExists();
-            if (existingGlobalInstallSDKVersion && Number(versionUtils.getMajorMinor(existingGlobalInstallSDKVersion, this.workerContext.eventStream, this.workerContext)) ===
-                Number(versionUtils.getMajorMinor(fullySpecifiedDotnetVersion, this.workerContext.eventStream, this.workerContext)))
+            if (existingGlobalInstallSDKVersion && Number(getMajorMinor(existingGlobalInstallSDKVersion, this.workerContext.eventStream, this.workerContext)) ===
+                Number(getMajorMinor(fullySpecifiedDotnetVersion, this.workerContext.eventStream, this.workerContext)))
             {
-                const isPatchUpgrade = Number(versionUtils.getFeatureBandPatchVersion(existingGlobalInstallSDKVersion, this.workerContext.eventStream, this.workerContext)) <
-                    Number(versionUtils.getFeatureBandPatchVersion(fullySpecifiedDotnetVersion, this.workerContext.eventStream, this.workerContext));
+                const isPatchUpgrade = Number(getFeatureBandPatchVersion(existingGlobalInstallSDKVersion, this.workerContext.eventStream, this.workerContext)) <
+                    Number(getFeatureBandPatchVersion(fullySpecifiedDotnetVersion, this.workerContext.eventStream, this.workerContext));
 
-                if (Number(versionUtils.getMajorMinor(existingGlobalInstallSDKVersion, this.workerContext.eventStream, this.workerContext)) >
-                    Number(versionUtils.getMajorMinor(fullySpecifiedDotnetVersion, this.workerContext.eventStream, this.workerContext))
-                    || Number(versionUtils.getFeatureBandFromVersion(existingGlobalInstallSDKVersion, this.workerContext.eventStream, this.workerContext)) >
-                    Number(versionUtils.getFeatureBandFromVersion(fullySpecifiedDotnetVersion, this.workerContext.eventStream, this.workerContext)))
+                if (Number(getMajorMinor(existingGlobalInstallSDKVersion, this.workerContext.eventStream, this.workerContext)) >
+                    Number(getMajorMinor(fullySpecifiedDotnetVersion, this.workerContext.eventStream, this.workerContext))
+                    || Number(getFeatureBandFromVersion(existingGlobalInstallSDKVersion, this.workerContext.eventStream, this.workerContext)) >
+                    Number(getFeatureBandFromVersion(fullySpecifiedDotnetVersion, this.workerContext.eventStream, this.workerContext)))
                 {
                     // We shouldn't downgrade to a lower patch
                     const err = new DotnetCustomLinuxInstallExistsError(new EventCancellationError('DotnetCustomLinuxInstallExistsError',

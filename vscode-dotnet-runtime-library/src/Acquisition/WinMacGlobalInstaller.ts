@@ -24,17 +24,14 @@ import
     SuppressedAcquisitionError
 } from '../EventStream/EventStreamEvents';
 import { CommandExecutor } from '../Utils/CommandExecutor';
-import { FileUtilities } from '../Utils/FileUtilities';
-import { getInstallFromContext } from '../Utils/InstallIdUtilities';
-import { WebRequestWorkerSingleton } from '../Utils/WebRequestWorkerSingleton';
-import { VersionResolver } from './VersionResolver';
-import * as versionUtils from './VersionUtilities';
-
 import { CommandExecutorResult } from '../Utils/CommandExecutorResult';
+import { FileUtilities } from '../Utils/FileUtilities';
 import { ICommandExecutor } from '../Utils/ICommandExecutor';
 import { IFileUtilities } from '../Utils/IFileUtilities';
+import { getInstallFromContext } from '../Utils/InstallIdUtilities';
 import { IUtilityContext } from '../Utils/IUtilityContext';
 import { executeWithLock, getOSArch } from '../Utils/TypescriptUtilities';
+import { WebRequestWorkerSingleton } from '../Utils/WebRequestWorkerSingleton';
 import { GLOBAL_LOCK_PING_DURATION_MS, SYSTEM_INFORMATION_CACHE_DURATION_MS } from './CacheTimeConstants';
 import { DotnetInstall } from './DotnetInstall';
 import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
@@ -42,6 +39,8 @@ import { IGlobalInstaller } from './IGlobalInstaller';
 import { IRegistryReader } from './IRegistryReader';
 import { RegistryReader } from './RegistryReader';
 import { GLOBAL_INSTALL_STATE_MODIFIER_LOCK, UNABLE_TO_ACQUIRE_GLOBAL_LOCK_ERR } from './StringConstants';
+import { VersionResolver } from './VersionResolver';
+import { getFeatureBandFromVersion, getFeatureBandPatchVersion, getMajorMinor } from './VersionUtilities';
 
 namespace validationPromptConstants
 {
@@ -510,12 +509,12 @@ Permissions: ${JSON.stringify(await this.commandRunner.execute(CommandExecutor.m
                 ( // Side by side installs of the same major.minor and band can cause issues in some cases. So we decided to just not allow it unless upgrading to a newer patch version.
                 // The installer can catch this but we can avoid unnecessary work this way,
                 // and for windows the installer may never appear to the user. With this approach, we don't need to handle installer error codes.
-                Number(versionUtils.getMajorMinor(requestedVersion, this.acquisitionContext.eventStream, this.acquisitionContext)) ===
-                Number(versionUtils.getMajorMinor(sdk, this.acquisitionContext.eventStream, this.acquisitionContext)) &&
-                Number(versionUtils.getFeatureBandFromVersion(requestedVersion, this.acquisitionContext.eventStream, this.acquisitionContext)) ===
-                Number(versionUtils.getFeatureBandFromVersion(sdk, this.acquisitionContext.eventStream, this.acquisitionContext)) &&
-                Number(versionUtils.getFeatureBandPatchVersion(requestedVersion, this.acquisitionContext.eventStream, this.acquisitionContext)) <=
-                Number(versionUtils.getFeatureBandPatchVersion(sdk, this.acquisitionContext.eventStream, this.acquisitionContext))
+                Number(getMajorMinor(requestedVersion, this.acquisitionContext.eventStream, this.acquisitionContext)) ===
+                Number(getMajorMinor(sdk, this.acquisitionContext.eventStream, this.acquisitionContext)) &&
+                Number(getFeatureBandFromVersion(requestedVersion, this.acquisitionContext.eventStream, this.acquisitionContext)) ===
+                Number(getFeatureBandFromVersion(sdk, this.acquisitionContext.eventStream, this.acquisitionContext)) &&
+                Number(getFeatureBandPatchVersion(requestedVersion, this.acquisitionContext.eventStream, this.acquisitionContext)) <=
+                Number(getFeatureBandPatchVersion(sdk, this.acquisitionContext.eventStream, this.acquisitionContext))
             )
             {
                 return sdk;

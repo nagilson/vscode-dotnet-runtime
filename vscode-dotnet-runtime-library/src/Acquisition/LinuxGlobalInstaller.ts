@@ -9,10 +9,11 @@ import * as path from 'path';
 import { IUtilityContext } from '../Utils/IUtilityContext';
 import { executeWithLock, getDotnetExecutable } from '../Utils/TypescriptUtilities';
 import { GLOBAL_LOCK_PING_DURATION_MS } from './CacheTimeConstants';
+import { DotnetDistroSupportStatus } from './DotnetDistroSupportStatus';
 import { GetDotnetInstallInfo } from './DotnetInstall';
 import { IAcquisitionWorkerContext } from './IAcquisitionWorkerContext';
 import { IGlobalInstaller } from './IGlobalInstaller';
-import { DotnetDistroSupportStatus, LinuxVersionResolver } from './LinuxVersionResolver';
+import { LinuxVersionResolver } from './LinuxVersionResolver';
 import { GLOBAL_INSTALL_STATE_MODIFIER_LOCK } from './StringConstants';
 
 

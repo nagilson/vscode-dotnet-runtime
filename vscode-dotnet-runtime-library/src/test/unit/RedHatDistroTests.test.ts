@@ -5,14 +5,16 @@
  * ------------------------------------------------------------------------------------------ */
 import * as chai from 'chai';
 import * as os from 'os';
+import { DistroVersionPair } from '../../Acquisition/DistroVersionPair';
+import { DotnetDistroSupportStatus } from '../../Acquisition/DotnetDistroSupportStatus';
 import { DotnetInstallMode } from '../../Acquisition/DotnetInstallMode';
-import { DistroVersionPair, DotnetDistroSupportStatus, LinuxVersionResolver } from '../../Acquisition/LinuxVersionResolver';
+import { LinuxVersionResolver } from '../../Acquisition/LinuxVersionResolver';
 import { RedHatDistroSDKProvider } from '../../Acquisition/RedHatDistroSDKProvider';
+import { RED_HAT_DISTRO_INFO_KEY } from '../../Acquisition/StringConstants';
 import { LocalMemoryCacheSingleton } from '../../LocalMemoryCacheSingleton';
 import { WebRequestWorkerSingleton } from '../../Utils/WebRequestWorkerSingleton';
 import { MockCommandExecutor } from '../mocks/MockObjects';
 import { getMockAcquisitionContext, getMockUtilityContext } from './TestUtility';
-import { RED_HAT_DISTRO_INFO_KEY } from '../../Acquisition/StringConstants';
 const assert = chai.assert;
 const standardTimeoutTime = 100000;
 

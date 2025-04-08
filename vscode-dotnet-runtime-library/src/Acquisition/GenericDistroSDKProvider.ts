@@ -8,10 +8,10 @@ import * as path from 'path';
 import { DistroPackagesSearch, DistroSupport, DotnetVersionResolutionError, EventBasedError } from '../EventStream/EventStreamEvents';
 import { CommandExecutor } from '../Utils/CommandExecutor';
 import { READ_SYMLINK_CACHE_DURATION_MS } from './CacheTimeConstants';
+import { DotnetDistroSupportStatus } from './DotnetDistroSupportStatus';
 import { DotnetInstallMode } from './DotnetInstallMode';
 import { IDistroDotnetSDKProvider } from './IDistroDotnetSDKProvider';
-import { DotnetDistroSupportStatus } from './LinuxVersionResolver';
-import * as versionUtils from './VersionUtilities';
+import { getFeatureBandFromVersion, getMajor, getMajorMinor, isValidLongFormVersionFormat } from './VersionUtilities';
 
 export class GenericDistroSDKProvider extends IDistroDotnetSDKProvider
 {
@@ -148,7 +148,7 @@ export class GenericDistroSDKProvider extends IDistroDotnetSDKProvider
         const commandResult = (await this.commandRunner.executeMultipleCommands(command, { cwd: path.resolve(rootDir), shell: true }, false))[0];
 
         commandResult.stdout = commandResult.stdout.replace('\n', '');
-        if (!versionUtils.isValidLongFormVersionFormat(commandResult.stdout, this.context.eventStream, this.context))
+        if (!isValidLongFormVersionFormat(commandResult.stdout, this.context.eventStream, this.context))
         {
             return null;
         }
@@ -159,8 +159,8 @@ export class GenericDistroSDKProvider extends IDistroDotnetSDKProvider
 
     public async getDotnetVersionSupportStatus(fullySpecifiedVersion: string, installType: DotnetInstallMode): Promise<DotnetDistroSupportStatus>
     {
-        if (versionUtils.getFeatureBandFromVersion(fullySpecifiedVersion, this.context.eventStream, this.context) !== '1' ||
-            Number(versionUtils.getMajor(fullySpecifiedVersion, this.context.eventStream, this.context)) < 6)
+        if (getFeatureBandFromVersion(fullySpecifiedVersion, this.context.eventStream, this.context) !== '1' ||
+            Number(getMajor(fullySpecifiedVersion, this.context.eventStream, this.context)) < 6)
         {
             this.context.eventStream.post(new DistroSupport(`Distro: Dotnet Version ${fullySpecifiedVersion} is not supported by this extension. It has a non 1 level band or < 6.0.`));
             return Promise.resolve(DotnetDistroSupportStatus.Unsupported);
@@ -224,7 +224,7 @@ Please refer to https://learn.microsoft.com/en-us/dotnet/core/install/linux if y
 
     public JsonDotnetVersion(fullySpecifiedDotnetVersion: string): string
     {
-        return versionUtils.getMajorMinor(fullySpecifiedDotnetVersion, this.context.eventStream, this.context);
+        return getMajorMinor(fullySpecifiedDotnetVersion, this.context.eventStream, this.context);
     }
 
     protected isPackageFoundInSearch(resultOfSearchCommand: any, searchCommandExitCode: string): boolean
