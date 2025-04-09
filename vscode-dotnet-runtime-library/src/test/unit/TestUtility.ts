@@ -16,6 +16,7 @@ import { RED_HAT_DISTRO_INFO_KEY, UBUNTU_DISTRO_INFO_KEY } from '../../Acquisiti
 import { IEventStream } from '../../EventStream/EventStream';
 import { IDotnetAcquireContext } from '../../IDotnetAcquireContext';
 import { IUtilityContext } from '../../Utils/IUtilityContext';
+import { NodeIPCMutex } from '../../Utils/NodeIPCMutex';
 
 const standardTimeoutTime = 100000;
 
@@ -138,4 +139,39 @@ export async function getLinuxSupportedDotnetSDKVersion(context: IAcquisitionWor
 export function getLatestLinuxDotnet()
 {
     return '9.0.100';
+}
+
+export const acquiredText = 'Acquired Lock:';
+export const releasedText = 'Released Lock:';
+
+export async function wait(delayMs: number)
+{
+    return new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+export class INodeIPCTestLogger extends INodeIPCMutexLogger
+{
+    public logs: string[] = [];
+
+    public log(msg: string): void
+    {
+        this.logs.push(msg);
+    }
+}
+
+export async function printWithLock(lock: string, msg: string, timeToLive: number, logger: INodeIPCTestLogger, fn: () => Promise<void> = () => { return Promise.resolve(); }, retryDelayMs: number = 10)
+{
+    const mutex = new NodeIPCMutex(lock, logger);
+
+    const c = await mutex.acquire(async () =>
+    {
+        logger.log(`${acquiredText}${msg}`);
+        await fn();
+        await wait(timeToLive);
+        logger.log(`${releasedText}${msg}`);
+        await fn();
+        return msg;
+    }, 40, timeToLive, msg);
+
+    logger.log(`After release, ${msg} returned c: ${c}`);
 }
