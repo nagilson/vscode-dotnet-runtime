@@ -16,7 +16,7 @@ import { RED_HAT_DISTRO_INFO_KEY, UBUNTU_DISTRO_INFO_KEY } from '../../Acquisiti
 import { IEventStream } from '../../EventStream/EventStream';
 import { IDotnetAcquireContext } from '../../IDotnetAcquireContext';
 import { IUtilityContext } from '../../Utils/IUtilityContext';
-import { NodeIPCMutex } from '../../Utils/NodeIPCMutex';
+import { INodeIPCMutexLogger, NodeIPCMutex } from '../../Utils/NodeIPCMutex';
 
 const standardTimeoutTime = 100000;
 
