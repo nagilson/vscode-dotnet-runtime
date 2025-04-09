@@ -31,12 +31,12 @@ export async function loopWithTimeoutOnCond(sampleRatePerMs: number, durationToW
         if (conditionToStop())
         {
             doAfterStop();
-            return;
+            return Promise.resolve();
         }
         eventStream?.post(waitEvent);
         await new Promise(waitAndResolve => setTimeout(waitAndResolve, sampleRatePerMs));
     }
-    throw new Error('The promise timed out.');
+    throw new Error(`The promise timed out at ${durationToWaitBeforeTimeoutMs}.`);
 }
 
 /**
