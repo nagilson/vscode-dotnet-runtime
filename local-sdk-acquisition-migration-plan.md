@@ -214,23 +214,6 @@ acquisition logic.
    guidance), but it is a larger jump than a runtime patch — document it. **Global SDKs stay excluded**
    (see the id-encoding discrepancy in finding 11).
 
-11. **Install-id encoding is asymmetric for SDK, and the auto-update filter must use structured fields,
-    not id strings.** After Commit 1B:
-    - **Local** SDK ids carry the `~sdk` marker (`8.0.408~x64~sdk`) and **will** auto-update.
-    - **Global** SDK ids carry `-global` and **no** `~sdk` marker (`8.0.408-global~x64`); today `-global`
-      *implies* SDK because global installs are SDK-only, and these **won't** auto-update.
-    So the marker is asymmetric: a `-global` id means "SDK, not auto-updated"; a `~sdk` id means "local
-    SDK, auto-updated." This is safe **only because** the auto-update filter keys off the structured
-    `installMode` / `isGlobal` fields, not id-string parsing — `isGlobal !== true` correctly excludes
-    global SDKs regardless of the (unmarked) id. Add a comment so nobody "optimizes" the filter into
-    string matching.
-    - **The opposite problem if global runtime is ever added:** local ids mark the *non-default* mode
-      (`sdk`/`aspnetcore`) and leave runtime unmarked; global ids currently treat *sdk* as the default
-      (unmarked). So a future global **runtime** would need a `runtime` (+`-global`) marker to be
-      distinguishable from a global SDK — the mirror image of the local case. Note this so whoever adds
-      global-runtime support knows the id scheme has to gain a global-side mode marker (and the
-      auto-update filter would then need to decide runtime-vs-sdk for global, not just `isGlobal`).
-
 8. **`acquireStatus` is already mode-correct.** It defaults `mode`/`architecture`/`installType`/
    `requestingExtensionId`, resolves the version with `getFullVersion(version, mode)`, and calls
    `worker.acquireStatus(workerContext, commandContext.mode)`. No functional change required for SDK;
@@ -254,6 +237,23 @@ acquisition logic.
     - global sdk: major, major.minor, feature band, fully-specified.
     This is a doc-comment change only (no type-shape change); update it in the same commit that adds the
     SDK validation so code and contract land together.
+
+11. **Install-id encoding is asymmetric for SDK, and the auto-update filter must use structured fields,
+    not id strings.** After Commit 1B:
+    - **Local** SDK ids carry the `~sdk` marker (`8.0.408~x64~sdk`) and **will** auto-update.
+    - **Global** SDK ids carry `-global` and **no** `~sdk` marker (`8.0.408-global~x64`); today `-global`
+      *implies* SDK because global installs are SDK-only, and these **won't** auto-update.
+    So the marker is asymmetric: a `-global` id means "SDK, not auto-updated"; a `~sdk` id means "local
+    SDK, auto-updated." This is safe **only because** the auto-update filter keys off the structured
+    `installMode` / `isGlobal` fields, not id-string parsing — `isGlobal !== true` correctly excludes
+    global SDKs regardless of the (unmarked) id. Add a comment so nobody "optimizes" the filter into
+    string matching.
+    - **The opposite problem if global runtime is ever added:** local ids mark the *non-default* mode
+      (`sdk`/`aspnetcore`) and leave runtime unmarked; global ids currently treat *sdk* as the default
+      (unmarked). So a future global **runtime** would need a `runtime` (+`-global`) marker to be
+      distinguishable from a global SDK — the mirror image of the local case. Note this so whoever adds
+      global-runtime support knows the id scheme has to gain a global-side mode marker (and the
+      auto-update filter would then need to decide runtime-vs-sdk for global, not just `isGlobal`).
 
 ### 0.4 Audit — what currently depends on the `sdk`+`local` gap (breaking-change check)
 
