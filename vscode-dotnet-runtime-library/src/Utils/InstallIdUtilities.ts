@@ -22,8 +22,13 @@ export function getInstallIdCustomArchitecture(version: string, architecture: st
         architecture = DotnetCoreAcquisitionWorker.defaultArchitecture();
     }
 
+    // Local SDK ids carry a ~sdk marker (like ~aspnetcore) so they never collide with a local runtime id.
+    // Global SDK ids stay unmarked: -global already implies SDK, and re-tagging would orphan existing
+    // global-SDK records and force an elevated reinstall.
+    const localModeSuffix = mode === 'aspnetcore' ? '~aspnetcore' : mode === 'sdk' ? '~sdk' : '';
+
     return installType === 'global' ? `${version}-global~${architecture}${mode === 'aspnetcore' ? '~aspnetcore' : ''}` :
-        `${version}~${architecture}${mode === 'aspnetcore' ? '~aspnetcore' : ''}`;
+        `${version}~${architecture}${localModeSuffix}`;
 }
 
 export function getInstallFromContext(ctx: IAcquisitionWorkerContext): DotnetInstall
@@ -95,7 +100,7 @@ export function getAssumedInstallInfo(id: string, mode: DotnetInstallMode | null
         // This code is for legacy install strings where the info was not recorded.
         // At the time only runtime or sdk was permitted and there were no outlier edge case versions that would be wrong.
         // So this assumption can hold true below. Do not utilize this going forward for new code.
-        installMode: mode ?? isRuntimeInstallId(id) ? 'runtime' : 'sdk'
+        installMode: mode ?? (isRuntimeInstallId(id) ? 'runtime' : 'sdk')
     };
 }
 

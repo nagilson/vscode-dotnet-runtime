@@ -5,6 +5,8 @@
 import * as chai from 'chai';
 import * as path from 'path';
 import { getVSCodeManagedDotnetRoot, isVSCodeManagedPath } from '../../Acquisition/IInstallationDirectoryProvider';
+import { RuntimeInstallationDirectoryProvider } from '../../Acquisition/RuntimeInstallationDirectoryProvider';
+import { SdkInstallationDirectoryProvider } from '../../Acquisition/SdkInstallationDirectoryProvider';
 
 const assert = chai.assert;
 
@@ -110,5 +112,26 @@ suite('IInstallationDirectoryProvider Unit Tests', function ()
                 assert.isTrue(isVSCodeManagedPath(managedRoot.toUpperCase(), managedRoot.toLowerCase()));
             });
         }
+    });
+
+    suite('SdkInstallationDirectoryProvider', function ()
+    {
+        const provider = new SdkInstallationDirectoryProvider(storage);
+
+        test('gives each install its own folder under the managed root', function ()
+        {
+            assert.equal(provider.getInstallDir('8.0.408~x64~sdk'), path.join(managedRoot, '8.0.408~x64~sdk'));
+        });
+
+        test('returns distinct directories for distinct install ids', function ()
+        {
+            assert.notEqual(provider.getInstallDir('8.0.408~x64~sdk'), provider.getInstallDir('9.0.100~x64~sdk'));
+        });
+
+        test('matches the runtime provider layout', function ()
+        {
+            const runtimeProvider = new RuntimeInstallationDirectoryProvider(storage);
+            assert.equal(provider.getInstallDir('8.0.408~x64~sdk'), runtimeProvider.getInstallDir('8.0.408~x64~sdk'));
+        });
     });
 });

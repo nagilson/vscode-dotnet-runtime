@@ -98,13 +98,9 @@ suite('DotnetCoreAcquisitionWorker Unit Tests', function ()
 
     function getExpectedPath(installId: string, mode: DotnetInstallMode): string
     {
-        if (mode === 'runtime' || mode === 'aspnetcore')
+        if (mode === 'runtime' || mode === 'aspnetcore' || mode === 'sdk')
         {
             return path.join(dotnetFolderName, installId, getDotnetExecutable())
-        }
-        else if (mode === 'sdk')
-        {
-            return path.join(dotnetFolderName, getDotnetExecutable());
         }
 
         return 'There is a mode without a designated return path';
@@ -386,7 +382,7 @@ ${eventStream.events.map(event => event.eventName).join(', ')}`);
         // 6.0 sdk legacy should remain, as well as 5.0 and 6.0 runtime. 5.0 SDK should be removed.
         detailedRemainingInstalls = extensionContext.get<InstallRecord[]>(installedVersionsKey, []);
         remainingInstalls = detailedRemainingInstalls.map(x => x.dotnetInstall.installId);
-        assert.deepStrictEqual(remainingInstalls, ['5.0.00~x64', runtimeV6, sdkV6, runtimeV5, '5.0.100~x64'],
+        assert.deepStrictEqual(remainingInstalls, ['5.0.00~x64', runtimeV6, sdkV6, runtimeV5, '5.0.100~x64~sdk'],
             'Only The Requested Legacy SDK is replaced when new SDK is installed');
     }).timeout(expectedTimeoutTime * 6);
 
