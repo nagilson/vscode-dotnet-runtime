@@ -79,13 +79,14 @@ acquisition logic.
      - `8` (major only) → `validateVersionInput` rejects it (1 dot-part). ❌
      - `8.0.4xx` (feature band) → passes validation but `resolveVersion` finds no match → throws. ❌
      - `8.0.404` (fully specified) → via the resolver, only "works" if it equals the channel's newest
-       SDK; any older patch throws. **But** the acquire command never sends a 3-part value to the
-       resolver — the `>2` passthrough (Decision below) routes it straight to the install script — so a
-       fully-specified patch installs fine. ✅ via passthrough
+       SDK; any older patch throws. **But** the acquire command never sends a fully-specified value to
+       the resolver \u2014 the SDK branch (Decision below) detects it with `isFullySpecifiedVersion` and
+       routes it straight to the install script \u2014 so a fully-specified patch installs fine. ✅ (handled
+       before the resolver)
      The list above is the resolver in isolation. It matches what the deprecated SDK extension exposed,
      since that extension called `getFullVersion(version, 'sdk')` directly
-     with **no** `>2` passthrough — so the education bundle was major.minor-only. Richer formats
-     (major, feature band, fully specified) are a **`dotnet.acquireGlobalSDK`-only** capability, because
+     with **no** fully-specified handling \u2014 so the education bundle was major.minor-only. The other
+     formats (major, feature band) are a **`dotnet.acquireGlobalSDK`-only** capability, because
      only `GlobalInstallerResolver` does feature-band/patch resolution against the per-channel manifest.
    - **Decision (REVISED — explicit fully-specified SDK + early, mode-aware validation):** local SDK
      officially supports **two** formats: `major.minor` (e.g. `8.0`, resolved to the latest patch) and
@@ -194,14 +195,41 @@ acquisition logic.
    `'installed'` / `'installedLk'` (`getLockFilePathForKeySimple`), independent of `getInstallDir`, so
    existing tracked installs are not moved or invalidated.
 
-7. **Auto-update excludes SDK — keep it that way (but be explicit).** `LocalInstallUpdateService`
-   filters `installMode !== 'sdk' && isGlobal !== true`, so local SDKs are **not** auto-updated. No
-   change is in scope. Note for the sample/req-1 context: the sample's auto-update demo installs an
-   old, fully-specified *runtime* and watches it get bumped; the local-SDK sample commands added below
-   use the same fully-specified-passthrough mechanism to install a *pinned* SDK, but that SDK will
-   **not** auto-update. If we ever want local SDKs to auto-update too, that is a separate, larger
-   change (drop the `!== 'sdk'` filter and validate SDK feature-band update semantics) and should be
-   its own proposal — flag it, don't silently expand scope here.
+7. **Auto-update currently excludes SDK — we now ADD local SDK auto-update (Commit 7).**
+   `LocalInstallUpdateService.getInstallGroups` filters
+   `installMode !== 'sdk' && isGlobal !== true`, so local SDKs are not auto-updated today. The
+   maintainer wants parity with runtimes, so Commit 7 drops the `installMode !== 'sdk'` clause (keeping
+   `isGlobal !== true`). Two things make this low-risk:
+   - **The in-use matrix is already mode-agnostic.** `trackInstalledVersion` →
+     `addVersionToExtensionState` calls `markInstallAsInUse(path)` on every successful acquire, and the
+     live-dependent check is keyed on the **executable path**, not the mode. So an SDK that was returned
+     to a consumer is already protected from the auto-update uninstall step — no change needed, just a
+     test.
+   - **The "latest" comparison already handles 3-part versions** (it numerically compares the third
+     component after stripping any `-preview` suffix), and SDK encodes band+patch in that component
+     (`8.0.412` > `8.0.305`), so it orders SDKs correctly.
+   The one **semantic** call-out: resolving `group.majorMinor` (e.g. `8.0`) for SDK yields the channel's
+   `latest-sdk`, which can **cross feature bands** (e.g. `8.0.3xx` → `8.0.4xx`). That is the intended
+   "always latest in channel" behavior (matches runtime's "latest patch" philosophy and Microsoft's SDK
+   guidance), but it is a larger jump than a runtime patch — document it. **Global SDKs stay excluded**
+   (see the id-encoding discrepancy in finding 11).
+
+11. **Install-id encoding is asymmetric for SDK, and the auto-update filter must use structured fields,
+    not id strings.** After Commit 1B:
+    - **Local** SDK ids carry the `~sdk` marker (`8.0.408~x64~sdk`) and **will** auto-update.
+    - **Global** SDK ids carry `-global` and **no** `~sdk` marker (`8.0.408-global~x64`); today `-global`
+      *implies* SDK because global installs are SDK-only, and these **won't** auto-update.
+    So the marker is asymmetric: a `-global` id means "SDK, not auto-updated"; a `~sdk` id means "local
+    SDK, auto-updated." This is safe **only because** the auto-update filter keys off the structured
+    `installMode` / `isGlobal` fields, not id-string parsing — `isGlobal !== true` correctly excludes
+    global SDKs regardless of the (unmarked) id. Add a comment so nobody "optimizes" the filter into
+    string matching.
+    - **The opposite problem if global runtime is ever added:** local ids mark the *non-default* mode
+      (`sdk`/`aspnetcore`) and leave runtime unmarked; global ids currently treat *sdk* as the default
+      (unmarked). So a future global **runtime** would need a `runtime` (+`-global`) marker to be
+      distinguishable from a global SDK — the mirror image of the local case. Note this so whoever adds
+      global-runtime support knows the id scheme has to gain a global-side mode marker (and the
+      auto-update filter would then need to decide runtime-vs-sdk for global, not just `isGlobal`).
 
 8. **`acquireStatus` is already mode-correct.** It defaults `mode`/`architecture`/`installType`/
    `requestingExtensionId`, resolves the version with `getFullVersion(version, mode)`, and calls
@@ -366,23 +394,55 @@ rejected; SDK versions resolve correctly.
    ```
    (`EventCancellationError` is already imported and used here.)
 
-2. Rename the misleadingly-named resolver and otherwise **leave the version-resolution block as-is** —
-   the existing mode-agnostic logic already does the right thing for SDK (major.minor resolves; a
-   3-part value passes through to the install script for pinning/testing; major-only is rejected by
-   `validateVersionInput`). No SDK-specific branch or guard (per finding 1, requirement 1):
+2. Replace the version-resolution block with a **mode-aware** version: keep the existing lenient
+   passthrough for runtime/aspnetcore, and add a strict, fail-early SDK branch using the library's
+   existing classifiers (finding 1). Also rename `runtimeVersionResolver` → `versionResolver`:
    ```ts
-   // Works for runtime, aspnetcore, AND sdk. `>2` parts == fully specified => passthrough
-   // (also auto-sets forceUpdate below), else resolve major.minor to the latest patch for `mode`.
+   // imports from 'vscode-dotnet-runtime-library':
+   //   isFullySpecifiedVersion, isNonSpecificFeatureBandedVersion, isNonSpecificMajorOrMajorMinorVersion
    const versionResolver = new VersionResolver(workerContext);
-   commandContext.version = commandContext.version.split('.')?.length > 2
-       ? commandContext.version
-       : await versionResolver.getFullVersion(commandContext.version, mode);
+   if (mode === 'sdk')
+   {
+       // Local SDK accepts major.minor (resolved) or a fully-specified patch (installed exactly).
+       // Reject everything else EARLY with a clear message instead of failing deep in the install script.
+       if (isFullySpecifiedVersion(commandContext.version, globalEventStream, workerContext))
+       {
+           // e.g. 8.0.408 — install this exact SDK. The pre-existing `>2 parts => forceUpdate=true`
+           // block above already forces the exact version, mirroring runtime.
+       }
+       else if (commandContext.version.split('.').length === 2 &&
+                isNonSpecificMajorOrMajorMinorVersion(commandContext.version))
+       {
+           commandContext.version = await versionResolver.getFullVersion(commandContext.version, 'sdk'); // 8.0 -> latest patch
+       }
+       else
+       {
+           throw new EventCancellationError('BadContextualVersion',
+               `Local .NET SDK acquisition accepts a major.minor (e.g. "8.0") or fully-specified (e.g. "8.0.408") version. ` +
+               `Major-only and feature band (e.g. "8.0.4xx") versions are only supported by dotnet.acquireGlobalSDK. Got "${commandContext.version}".`);
+       }
+   }
+   else
+   {
+       // Existing runtime/aspnetcore behavior (unchanged): major.minor resolves; a fully-specified
+       // 3-part version passes through to the install script (testing/pinning affordance).
+       commandContext.version = commandContext.version.split('.')?.length > 2
+           ? commandContext.version
+           : await versionResolver.getFullVersion(commandContext.version, mode);
+   }
    ```
-   (The pre-existing `version.split('.').length > 2 && forceUpdate === undefined => forceUpdate = true`
-   block above this is also mode-agnostic, so a pinned 3-part SDK installs the exact version requested,
-   just like runtime.)
+   - The SDK branch validates **shape** early; a well-formed but non-existent patch still surfaces as a
+     not-found from the install script (acceptable, matches runtime).
+   - **Do not** route runtime through `isFullySpecifiedVersion` — it is SDK-shaped and returns `false`
+     for `9.0.0` / `8.0.11` (would break the existing "Fully specified version installs specific
+     version" runtime test). That is precisely why the branch is conditioned on `mode === 'sdk'`.
 
-3. Replace the dispatch ternary with a `switch` (per the user's request) and add the SDK branch:
+3. **Update the `IDotnetAcquireContext.version` doc-comment** (finding 10) in
+   [vscode-dotnet-runtime-library/src/IDotnetAcquireContext.ts](vscode-dotnet-runtime-library/src/IDotnetAcquireContext.ts)
+   to state the accepted formats per `mode` + `installType` (local runtime/aspnet: major.minor; local
+   sdk: major.minor or fully-specified; global sdk: all four). Doc-comment only — no type-shape change.
+
+4. Replace the dispatch ternary with a `switch` (per the user's request) and add the SDK branch:
    ```ts
    const acquisitionInvoker = new AcquisitionInvoker(workerContext, utilContext);
    switch (mode)
@@ -397,7 +457,7 @@ rejected; SDK versions resolve correctly.
    }
    ```
 
-4. **Do not** add `setPathEnvVar`. **Do not** add a `knownExtensionIds` check.
+5. **Do not** add `setPathEnvVar`. **Do not** add a `knownExtensionIds` check.
 
 **Notes**
 - The post-acquire `getInstallIdCustomArchitecture(...mode, 'local')` + `DotnetAcquisitionTotalSuccessEvent`
@@ -409,12 +469,12 @@ rejected; SDK versions resolve correctly.
 - `cd vscode-dotnet-runtime-extension && npm run compile`.
 - Manual: `dotnet.acquire { version: '8.0', mode: 'sdk', requestingExtensionId }` installs an SDK
   under `<globalStoragePath>/.dotnet/<installId>` (its own folder, per Commit 1); PATH is unchanged.
-- Manual: `dotnet.acquire { version: '8.0.408', mode: 'sdk' }` pins and installs that exact SDK patch
-  (passthrough).
+- Manual: `dotnet.acquire { version: '8.0.408', mode: 'sdk' }` installs that exact SDK patch
+  (fully-specified, now explicitly supported).
 - `dotnet.acquire { version: '8.0', mode: 'sdk', installType: 'global' }` rejects with the new message.
-- `dotnet.acquire { version: '8', mode: 'sdk' }` rejects (major-only; `validateVersionInput`). A
-  feature band like `{ version: '8.0.4xx', mode: 'sdk' }` is accepted by the resolver-bypass but then
-  fails at the install script — document as global-only (add both as tests in the tests commit).
+- `dotnet.acquire { version: '8', mode: 'sdk' }` (major-only) and `{ version: '8.0.4xx', mode: 'sdk' }`
+  (feature band) both reject **early** with the major.minor-or-fully-specified message (no install
+  script invocation). Add both as tests in the tests commit.
 
 ---
 
@@ -578,24 +638,30 @@ test('Local acquire rejects global SDK requests', async () =>
 }).timeout(standardTimeoutTime);
 ```
 
-Add version-format tests reflecting requirement 1 (major.minor resolves; fully-specified passes
-through; major-only is rejected):
+Add version-format tests reflecting the SDK validation (major.minor resolves; fully-specified is
+explicitly supported; major-only and feature band fail **early**):
 
 ```ts
-test('Local SDK acquire installs a fully-specified (pinned) version via passthrough', async () =>
+test('Local SDK acquire installs a fully-specified version', async () =>
 {
-    // 3-part value bypasses resolution and installs that exact SDK (same mechanism as runtime).
+    // Explicitly supported: a fully-specified patch installs that exact SDK.
     const context: IDotnetAcquireContext = { version: '8.0.408', requestingExtensionId, mode: 'sdk' };
     const result = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquire', context);
     assert.exists(result!.dotnetPath);
-    assert.include(result!.dotnetPath, '8.0.408', 'The pinned SDK patch is installed');
+    assert.include(result!.dotnetPath, '8.0.408', 'The exact SDK patch is installed');
 }).timeout(standardTimeoutTime);
 
-test('Local SDK acquire rejects a major-only version', async () =>
+test('Local SDK acquire rejects major-only and feature-band versions early', async () =>
 {
-    // Major-only is a dotnet.acquireGlobalSDK capability; locally it fails version validation.
-    const context: IDotnetAcquireContext = { version: '8', requestingExtensionId, mode: 'sdk' };
-    return assert.isRejected(vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquire', context));
+    // Both are dotnet.acquireGlobalSDK-only; locally they fail version validation before any install.
+    for (const version of ['8', '8.0.4xx'])
+    {
+        const context: IDotnetAcquireContext = { version, requestingExtensionId, mode: 'sdk' };
+        await assert.isRejected(
+            vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquire', context),
+            /major\.minor|fully-specified/i,
+            `Local SDK acquire should reject "${version}" early`);
+    }
 }).timeout(standardTimeoutTime);
 ```
 
@@ -654,13 +720,13 @@ test. Tests run against compiled JS — `npm run compile` first.
 
 The sample is how the local-SDK path is exercised by hand. Add commands that mirror the existing
 runtime samples but pass `mode: 'sdk'`. These are **new** commands calling the new `dotnet.*` API (not
-the deleted `dotnet-sdk.*` extension, whose `sample.dotnet-sdk.*` commands are removed in Commit 8).
+the deleted `dotnet-sdk.*` extension, whose `sample.dotnet-sdk.*` commands are removed in Commit 9).
 
 **File:** [sample/src/extension.ts](sample/src/extension.ts)
 
 - `sample.dotnet.acquireSDK` → reuse the existing `callAcquireAPI(version, 'sdk')` helper (it already
-  posts `forceUpdate: true`, so a fully-specified version pins that exact SDK — the requirement-1
-  passthrough that lets you install a specific older SDK by hand).
+  posts `forceUpdate: true`, so a fully-specified version installs that exact SDK — the explicitly
+  supported fully-specified path that lets you install a specific older SDK by hand).
 - `sample.dotnet.acquireSDKStatus` → `dotnet.acquireStatus` with `{ version, requestingExtensionId,
   mode: 'sdk' }`. NOTE: the existing runtime status sample omits `mode` (defaults to runtime); the SDK
   variant **must** pass `mode: 'sdk'` or it will check for a runtime instead.
@@ -673,9 +739,10 @@ the deleted `dotnet-sdk.*` extension, whose `sample.dotnet-sdk.*` commands are r
 Register each in [sample/package.json](sample/package.json) under `contributes.commands` (mirroring the
 existing `sample.dotnet.*` entries) so they appear in the command palette.
 
-**Auto-update (finding 7):** local SDKs are not auto-updated, so do **not** add an SDK analogue of the
-runtime auto-update / `concurrentTest` demo. A pinned-then-update SDK demo would require the separate
-auto-update scope change.
+**Auto-update (finding 7 / Commit 7):** local SDKs **are** auto-updated after Commit 7 (like runtimes).
+The existing `sample.dotnet.resetUpdateTimer` command already forces an update pass, so it doubles as
+the SDK auto-update demo — no SDK-specific update command is needed. You can optionally note in that
+command's description that it now also updates local SDKs.
 
 **Verify:** launch the Sample Extension; run `sample.dotnet.acquireSDK` (try `8.0` and a pinned
 `8.0.408`), then `sample.dotnet.acquireSDKStatus`, `sample.dotnet.uninstallSDK`; confirm a local
@@ -683,32 +750,95 @@ runtime installed alongside survives the SDK uninstall.
 
 ---
 
-## Commit 7 — Docs + changelog (breaking change)
+## Commit 7 — Local SDK automatic updates
+
+**Goal:** bring local SDKs into the same auto-update path as local runtimes/aspnet, while keeping
+global SDKs excluded.
+
+**File:** [vscode-dotnet-runtime-library/src/Acquisition/LocalInstallUpdateService.ts](vscode-dotnet-runtime-library/src/Acquisition/LocalInstallUpdateService.ts)
+(`getInstallGroups`).
+
+The only required code change is the group filter — drop the `installMode !== 'sdk'` clause, keep the
+global exclusion, and rename the now-misnamed local variable:
+
+```ts
+// before: runtime + aspnet only
+// const runtimeInstalls = (...getExistingInstalls(...)).filter(i => i.dotnetInstall.installMode !== 'sdk' && i.dotnetInstall.isGlobal !== true);
+// after: all LOCAL installs (runtime, aspnet, AND sdk); global stays excluded.
+const localInstalls = (await this.installTrackerType.getInstance(this.eventStream, this.extensionState)
+    .getExistingInstalls(this.managementDirectoryProvider, false))
+    .filter(i => i.dotnetInstall.isGlobal !== true); // global SDKs are user/OS-managed; never auto-update them (finding 11)
+```
+
+**Why nothing else needs to change (verified):**
+- **Grouping** keys on `mode|architecture|majorMinor`. `getMajorMinorFromValidVersion('8.0.408')` =
+  `8.0`, so SDK installs group correctly and separately from runtime (`mode` is part of the key).
+- **Install/uninstall actions** are the generic `acquireLocal` / `uninstall` already wired in
+  `extension.ts`. The auto-update acquire context uses `version: group.majorMinor` (`8.0`) +
+  `mode: 'sdk'`; with Commit 2's SDK validation that resolves to the channel's latest SDK. Uninstall is
+  path/installId-based and mode-agnostic. The per-install SDK folder (Commit 1A) and `~sdk` id
+  (Commit 1B) are produced automatically by those calls.
+- **"Latest in group" comparison** already compares the numeric third component (band+patch) and
+  strips `-preview` suffixes, so `8.0.412` > `8.0.305` orders SDKs correctly. No change.
+- **`managementDirectoryProvider` is the runtime provider**, but `getExistingInstalls` reads the global
+  `installed` state under the constant `installedLk` lock (provider-independent), so it already returns
+  SDK records; the runtime provider is only a lock/state handle here. No change, but note it in a
+  comment.
+
+**Semantics to document (finding 7):** SDK auto-update follows the channel's `latest-sdk`, which can
+cross feature bands (`8.0.3xx` → `8.0.4xx`), unlike a runtime patch bump. This is the intended
+"latest in channel" behavior; call it out in the changelog/docs.
+
+**In-use protection (already works — just test it):** `markInstallAsInUse` is path-keyed and fires on
+every acquire, so an SDK handed to a consumer is protected from the auto-update uninstall step exactly
+like a runtime. No code change.
+
+**Global exclusion (finding 11):** keep `isGlobal !== true`. Do **not** switch the filter to id-string
+parsing — global SDK ids have no `~sdk` marker, so only the structured `isGlobal` field is reliable.
+
+**Tests** — [vscode-dotnet-runtime-library/src/test/unit/LocalInstallUpdateService.test.ts](vscode-dotnet-runtime-library/src/test/unit/LocalInstallUpdateService.test.ts):
+- Seed two local SDKs in one major.minor group (older + newer); run the update; assert the newest is
+  kept, the older is uninstalled, and owners were transferred (mirror the existing runtime update test).
+- Seed a **global** SDK record; run the update; assert it is **untouched** (never grouped).
+- Seed an SDK marked in-use (current session); assert it is **not** uninstalled even if outdated.
+- A mixed runtime+SDK state updates both independently (no cross-mode grouping).
+
+**Verify:** `cd vscode-dotnet-runtime-library && npm run compile && npm run test`.
+
+---
+
+## Commit 8 — Docs + changelog (breaking change)
 
 1. **[Documentation/commands.md](Documentation/commands.md) → `dotnet.acquire`:** document that `mode`
    may be `'runtime'` (default), `'aspnetcore'`, or `'sdk'`; that `mode: 'sdk'` performs a **local,
    user-folder SDK install**; that **PATH is not configured** for local SDK installs (the caller gets
    the path back via `IDotnetAcquireResult.dotnetPath` and is responsible for using it); that global
-   SDK installs must use `dotnet.acquireGlobalSDK`; and that local SDKs are **not auto-updated**.
+   SDK installs must use `dotnet.acquireGlobalSDK`; and that local SDKs **are auto-updated** like
+   runtimes (after Commit 7), following the channel's latest SDK — which can cross feature bands
+   (`8.0.3xx` → `8.0.4xx`). Global SDKs are **not** auto-updated.
    Add an explicit **accepted version formats** table so the runtime/local-SDK/global-SDK differences
    are unambiguous (this is the user-facing clarity the maintainer asked for):
 
    | Command (mode) | `major` (`8`) | `major.minor` (`8.0`) | feature band (`8.0.4xx`) | fully specified (`8.0.404`) |
    | --- | :---: | :---: | :---: | :---: |
    | `dotnet.acquire` runtime / aspnetcore | ❌ | ✅ | ❌ | ⚠️ testing-only passthrough |
-   | `dotnet.acquire` **sdk (local)** | ❌ | ✅ | ❌ | ⚠️ testing-only passthrough |
+   | `dotnet.acquire` **sdk (local)** | ❌ | ✅ | ❌ (rejected early) | ✅ |
    | `dotnet.acquireGlobalSDK` (sdk, global) | ✅ | ✅ | ✅ | ✅ |
 
-   - Under `dotnet.acquire`, explicitly state: **local SDK officially supports `major.minor`** (e.g.
-     `8.0`, resolved to the latest patch) and additionally accepts a **fully-specified patch as an
-     unsupported testing/pinning passthrough** (e.g. `8.0.408`). **Major-only and feature band
-     (`8.0.4xx`) are not supported locally** — use `dotnet.acquireGlobalSDK` for those (a feature band
-     passed locally is not understood by the install script and fails). This mirrors the runtime path.
+   - Under `dotnet.acquire`, explicitly state: **local SDK supports `major.minor`** (e.g. `8.0`,
+     resolved to the latest patch) **and fully-specified** (e.g. `8.0.408`, installed exactly).
+     **Major-only and feature band (`8.0.4xx`) are rejected early** with a message pointing to
+     `dotnet.acquireGlobalSDK`. Note the deliberate asymmetry with runtime: for SDK a fully-specified
+     version is a *supported, validated* format; for runtime it remains an *unsupported testing
+     passthrough* (and runtime has no feature bands).
    - Under `dotnet.acquireGlobalSDK`, the four-format list already exists; cross-link it from the
-     `dotnet.acquire` SDK note so readers see where richer formats are supported.
+     `dotnet.acquire` SDK note so readers see where the *other* formats (major-only, feature band) are
+     supported.
    - For runtime, clarify the existing reality: `major.minor` is the supported format; a
      fully-specified version is accepted as an **unsupported testing affordance** (passed through
      without resolution), and `major`-only / feature-band are not accepted.
+   - Mirror this matrix in the `IDotnetAcquireContext.version` doc-comment (already updated in Commit 2,
+     finding 10) so the in-code contract and the docs agree.
 2. **[vscode-dotnet-runtime-extension/CHANGELOG.md](vscode-dotnet-runtime-extension/CHANGELOG.md):**
    add a **Breaking change** entry:
    - The standalone `vscode-dotnet-sdk` extension (`ms-dotnettools.vscode-dotnet-sdk`, unshipped for
@@ -716,13 +846,15 @@ runtime installed alongside survives the SDK uninstall.
    - Consumers that previously called `dotnet-sdk.acquire` for a local SDK must call
      `dotnet.acquire` with `{ mode: 'sdk' }`. `dotnet-sdk.*` commands no longer exist.
    - Local SDK acquisition via `dotnet.acquire` accepts **`major.minor`** (e.g. `8.0`, resolved to the
-     latest patch) and a **fully-specified patch** (e.g. `8.0.408`) as a testing/pinning passthrough,
-     mirroring the runtime path. **Major-only and feature-band** formats remain a
-     `dotnet.acquireGlobalSDK`-only capability.
+     latest patch) and **fully-specified** (e.g. `8.0.408`, installed exactly). **Major-only and
+     feature-band** formats are rejected early and remain a `dotnet.acquireGlobalSDK`-only capability.
    - Local SDKs now install under the VS Code-managed global-storage `.dotnet` folder in **one
      isolated subfolder per SDK version** (`<globalStorage>/.dotnet/<installId>/`). Previously every
      local SDK shared a single `%APPDATA%\.dotnet` / `~/.vscode-dotnet-sdk/.dotnet` folder. Old
      SDK-extension installs are orphaned (harmless) and may be removed manually.
+   - Local SDKs are now **automatically updated** like local runtimes (older patches are replaced and
+     uninstalled when not in use). Auto-update follows the channel's latest SDK and may cross feature
+     bands (e.g. `8.0.3xx` → `8.0.4xx`). **Global** SDKs are not auto-updated.
    - Only bump the extension version (`npm version patch`) **if explicitly requested** (per repo
      instructions).
 3. Update prose references that describe "two extensions":
@@ -735,7 +867,7 @@ runtime installed alongside survives the SDK uninstall.
 
 ---
 
-## Commit 8 — Delete the SDK extension and all of its build wiring
+## Commit 9 — Delete the SDK extension and all of its build wiring
 
 Do this **last**, after tests are migrated, so coverage is never lost. Group as one commit (or split
 "delete folder" vs "remove wiring" if the diff is large).
@@ -807,15 +939,19 @@ gone.
    (`SdkInstallationDirectoryProvider`) **and** `~sdk` install-id marker
    (`getInstallIdCustomArchitecture`), plus the worker-test `getExpectedPath('sdk')` update; with unit
    tests. Prerequisite safety/correctness fix; must precede the acquire wiring.
-2. **Commit 2** — `dotnet.acquire` local SDK dispatch (switch + `acquireLocalSDK`), 3-part passthrough
-   parity, and global rejection (feature is testable immediately).
+2. **Commit 2** — `dotnet.acquire` local SDK dispatch (switch + `acquireLocalSDK`), early mode-aware
+   SDK version validation (major.minor + fully-specified; reject major-only/feature-band),
+   `IDotnetAcquireContext.version` doc update, and global rejection (testable immediately).
 3. **Commit 3** — Local SDK modal events + republisher + new unit test.
 4. **Commit 4** — `acquireStatus` confirmation/fix (may fold into Commit 5 if no code change).
 5. **Commit 5** — Migrate/relocate tests; remove the unknown-extension-id test; add SDK status,
-   passthrough, uninstall-one/all, and isolation tests; rename `installRuntime`→`installLocal`.
+   fully-specified install, early major-only/feature-band rejection, uninstall-one/all, and isolation
+   tests; rename `installRuntime`→`installLocal`.
 6. **Commit 6** — Sample extension local SDK demo commands (acquire / status / uninstall / uninstallAll).
-7. **Commit 7** — Docs + changelog (breaking change).
-8. **Commit 8** — Delete the SDK extension and all build/sample/pipeline wiring.
+7. **Commit 7** — Local SDK automatic updates (`LocalInstallUpdateService` filter; keep global
+   excluded) + unit tests.
+8. **Commit 8** — Docs + changelog (breaking change).
+9. **Commit 9** — Delete the SDK extension and all build/sample/pipeline wiring.
 
 Rationale: land the folder-isolation safety fix first, then ship the capability and its tests before
 deleting the old extension, so the local-SDK path is proven before its only prior home is removed.
@@ -849,11 +985,25 @@ deleting the old extension, so the local-SDK path is proven before its only prio
   `getExpectedPath('sdk')` hard-codes the shared `.dotnet` root (no `installId`); it **must** be moved
   to the per-install folder in Commit 1A, or the existing local-SDK worker tests fail. This is the one
   place where code "relied on `sdk` being dropped."
-- **Local SDK version formats (requirement 1).** Mirrors runtime exactly: `major.minor` resolves to the
-  latest patch, a fully-specified 3-part value passes through (pins the exact patch and auto-sets
-  `forceUpdate`), major-only is rejected by `validateVersionInput`, and a feature band fails at the
-  install script (global-only). No SDK-specific guard is added — it's the same code path as runtime.
+- **Local SDK version validation (mode-aware, fail-early).** SDK accepts `major.minor` (resolved) and
+  fully-specified (e.g. `8.0.408`, installed exactly); major-only and feature band (`8.0.4xx`) are
+  **rejected up front** with a clear message via the existing library classifiers
+  (`isFullySpecifiedVersion` / `isNonSpecificFeatureBandedVersion` / `isNonSpecificMajorOrMajorMinorVersion`).
+  **Runtime/aspnetcore are unchanged** (lenient `>2` passthrough) — deliberately, because
+  `isFullySpecifiedVersion` is SDK-shaped and returns `false` for `9.0.0`/`8.0.11`. The validation
+  branch is conditioned on `mode === 'sdk'` precisely to avoid touching the runtime path. Also update
+  the `IDotnetAcquireContext.version` doc-comment so the contract matches.
 - **High blast radius.** `dotnet.acquire` is the single most-used command. Keep the acquire commit
-  (Commit 2) minimal and additive: a new `case 'sdk'` in the dispatch switch and a global-reject guard;
-  the version-resolution block is **unchanged** (shared with runtime) — no change to the
-  runtime/aspnetcore behavior.
+  (Commit 2) additive: a new `case 'sdk'` in the dispatch switch, a global-reject guard, and the SDK
+  validation branch wrapped in `if (mode === 'sdk')` — the runtime/aspnetcore resolution path is
+  **unchanged**.
+- **SDK auto-update crosses feature bands (Commit 7).** Resolving `major.minor` for SDK yields the
+  channel's `latest-sdk`, so an auto-update can move a managed local SDK across feature bands
+  (`8.0.3xx` → `8.0.4xx`), a larger jump than a runtime patch. This is intentional "latest in channel"
+  parity with runtime, but flag it for telemetry/UX owners and the changelog. The outdated SDK is only
+  uninstalled if not in use (path-keyed live-dependent check).
+- **Auto-update id-encoding asymmetry (findings 7 & 11).** Local SDK ids carry `~sdk` and auto-update;
+  global SDK ids carry only `-global` (no `~sdk`) and are excluded. The filter **must** stay on the
+  structured `installMode`/`isGlobal` fields, never id-string parsing. If global **runtime** support is
+  ever added, global ids will need a mode marker (the mirror of the local case) and the auto-update
+  filter will need to distinguish runtime-vs-sdk for global installs, not just `isGlobal`.
