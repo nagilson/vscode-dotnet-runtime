@@ -19,6 +19,7 @@ import
     DotnetAcquisitionRequested,
     DotnetAcquisitionStatusRequested,
     DotnetAcquisitionTotalSuccessEvent,
+    DotnetArchitectureHostMismatchEvent,
     DotnetConditionValidator,
     DotnetCoreAcquisitionWorker,
     DotnetCoreDependencyInstaller,
@@ -30,6 +31,7 @@ import
     DotnetFindPathSettingFound,
     DotnetHostPathFinder,
     DotnetInstall,
+    DotnetInstallArchitectureNotRunnableOnHost,
     DotnetInstallMode,
     DotnetInstallType,
     DotnetOfflineWarning,
@@ -47,6 +49,7 @@ import
     getInstallIdCustomArchitecture,
     getMajor,
     getMajorMinor,
+    getOSArch,
     GlobalAcquisitionContextMenuOpened,
     GlobalInstallerResolver,
     IAcquisitionWorkerContext,
@@ -78,6 +81,7 @@ import
     LocalMemoryCacheSingleton,
     NoExtensionIdProvided,
     registerEventStream,
+    resolveHostCompatibleArchitecture,
     UninstallErrorConfiguration,
     UserManualInstallFailure,
     UserManualInstallRequested,
@@ -246,6 +250,8 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
 
             telemetryObserver?.setAcquisitionContext(workerContext, commandContext);
 
+            await applyHostArchitectureGuard(commandContext, workerContext);
+
             if (!commandContext.requestingExtensionId)
             {
                 globalEventStream.post(new NoExtensionIdProvided(`No requesting extension id was provided for the request ${commandContext.version}.`));
@@ -329,6 +335,8 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
             // Errors between here and the place where it is resolved cannot be routed to one another.
 
             telemetryObserver?.setAcquisitionContext(workerContext, commandContext);
+
+            await applyHostArchitectureGuard(commandContext, workerContext);
 
             if (commandContext.version === '' || !commandContext.version)
             {
@@ -1010,6 +1018,62 @@ ${JSON.stringify(commandContext)}`));
                 mode
             } as IDotnetAcquireContext
         )
+    }
+
+    /**
+     * Validates the architecture about to be installed against the true host architecture and applies the
+     * caller-aware policy from resolveHostCompatibleArchitecture:
+     * - an explicit caller request for an architecture that cannot run here is honored but warned about
+     *   (the caller may be intentionally targeting another machine),
+     * - an architecture we derived ourselves that cannot run here is corrected to the host architecture.
+     * Emits telemetry whenever the requested architecture differs from the detected host architecture.
+     * Skips arch-agnostic (legacy null) installs and never throws — detection failures must not block installs.
+     */
+    async function applyHostArchitectureGuard(commandContext: IDotnetAcquireContext, workerContext: IAcquisitionWorkerContext): Promise<void>
+    {
+        // A null (or 'null') architecture is an intentional arch-agnostic/legacy install; leave it untouched.
+        if (commandContext.architecture === null || commandContext.architecture === 'null')
+        {
+            return;
+        }
+
+        const callerExplicitlyRequested = commandContext.architecture !== undefined && commandContext.architecture !== null;
+        const requestedArchitecture = commandContext.architecture ?? DotnetCoreAcquisitionWorker.defaultArchitecture();
+
+        let hostArchitecture: string;
+        try
+        {
+            hostArchitecture = await getOSArch(new CommandExecutor(workerContext, utilContext));
+        }
+        catch (error)
+        {
+            // Host architecture detection is best-effort; never let it block an install.
+            globalEventStream.post(new DotnetArchitectureHostMismatchEvent(`Could not detect the host architecture to validate '${requestedArchitecture}': ${(error as Error)?.message ?? JSON.stringify(error)}`));
+            return;
+        }
+
+        const resolution = resolveHostCompatibleArchitecture(requestedArchitecture, hostArchitecture, callerExplicitlyRequested);
+
+        if (resolution.differsFromHost)
+        {
+            globalEventStream.post(new DotnetArchitectureHostMismatchEvent(
+                `Requested .NET architecture '${requestedArchitecture}' differs from the detected host architecture '${hostArchitecture}' ` +
+                `(callerProvided=${callerExplicitlyRequested}, runnableOnHost=${resolution.runnableOnHost}, outcome=${resolution.outcome}).`));
+        }
+
+        if (resolution.outcome === 'honored-incompatible')
+        {
+            globalEventStream.post(new DotnetInstallArchitectureNotRunnableOnHost(
+                `An extension requested .NET for the '${requestedArchitecture}' architecture, but this machine appears to be '${hostArchitecture}'. ` +
+                `Installing '${requestedArchitecture}' as requested, but it may fail to run here. If this is unexpected, report it to the requesting extension.`));
+        }
+        else if (resolution.corrected)
+        {
+            globalEventStream.post(new DotnetInstallArchitectureNotRunnableOnHost(
+                `The .NET architecture '${requestedArchitecture}' cannot run on this machine (detected '${hostArchitecture}'). ` +
+                `Installing '${resolution.architecture}' instead.`));
+            commandContext.architecture = resolution.architecture;
+        }
     }
 
     function getAcquisitionWorkerContext(mode: DotnetInstallMode, acquiringContext: IDotnetAcquireContext): IAcquisitionWorkerContext

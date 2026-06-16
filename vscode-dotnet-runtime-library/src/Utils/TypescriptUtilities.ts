@@ -161,7 +161,157 @@ export async function getOSArch(executor: ICommandExecutor): Promise<string>
         return (await executor.execute(findTrueArchCommand, { dotnetInstallToolCacheTtlMs: SYSTEM_INFORMATION_CACHE_DURATION_MS }, false)).stdout.toLowerCase().trim();
     }
 
+    if (os.platform() === 'win32')
+    {
+        return getWindowsTrueOSArch();
+    }
+
     return os.arch();
+}
+
+/**
+ * Returns the true Windows OS architecture in node `os.arch()` style ('x64' | 'arm64' | 'ia32').
+ *
+ * `os.arch()` / `process.arch` is the architecture Node/Electron was COMPILED for, not the machine's.
+ * When an x86 or x64 VS Code build runs on an ARM64 Windows OS (WOW64 emulation), `os.arch()` reports
+ * the emulated architecture (e.g. 'x64') rather than the true machine architecture ('arm64'). Windows
+ * exposes the real machine architecture via the PROCESSOR_ARCHITEW6432 environment variable, which is
+ * only set while a process runs emulated; otherwise PROCESSOR_ARCHITECTURE already holds the native one.
+ * @see https://learn.microsoft.com/windows/win32/winprog64/wow64-implementation-details
+ */
+export function getWindowsTrueOSArch(): string
+{
+    const reportedArch = process.env.PROCESSOR_ARCHITEW6432 || process.env.PROCESSOR_ARCHITECTURE;
+    switch (reportedArch?.toLowerCase())
+    {
+        case 'arm64':
+            return 'arm64';
+        case 'amd64':
+            return 'x64';
+        case 'x86':
+            return 'ia32';
+        default:
+            // Unknown or unset: trust the process architecture rather than guessing.
+            return os.arch();
+    }
+}
+
+/**
+ * Canonicalizes the many spellings of a CPU architecture (from `os.arch()`, `uname`, and Windows
+ * environment variables) into a single comparable form so values from different sources can be matched.
+ * 32-bit ARM is not a target of this extension, and macOS `uname -p` reports 'arm'/'i386' rather than
+ * the node spellings, so those are mapped here too.
+ */
+export function canonicalCpuArchitecture(architecture: string | null | undefined): string
+{
+    switch (architecture?.toLowerCase())
+    {
+        case 'amd64':
+        case 'x86_64':
+        case 'x86-64':
+        case 'i386': // macOS `uname -p` on Intel; no 32-bit Macs run a current VS Code, so this means x64.
+            return 'x64';
+        case 'ia32':
+        case 'i686':
+        case 'x86':
+            return 'x86';
+        case 'aarch64':
+        case 'arm': // macOS `uname -p` on Apple Silicon.
+        case 'arm64':
+            return 'arm64';
+        default:
+            return architecture?.toLowerCase() ?? '';
+    }
+}
+
+/**
+ * Whether a binary built for `requestedArch` can actually execute on a host whose true architecture is
+ * `hostArch`. Same-architecture always runs. x64/x86 binaries run on arm64 hosts via Windows ARM64
+ * emulation or macOS Rosetta 2, and x86 runs on x64 via WOW64. Notably an arm64 binary CANNOT run on an
+ * x64/x86 host. Unknown architectures are treated as runnable so we never block a legitimate install.
+ */
+export function architectureCanRunOnHost(requestedArch: string, hostArch: string): boolean
+{
+    const requested = canonicalCpuArchitecture(requestedArch);
+    const host = canonicalCpuArchitecture(hostArch);
+    const knownArchitectures = new Set(['x64', 'x86', 'arm64']);
+
+    // If we cannot confidently reason about either side, never claim it is non-runnable.
+    if (!knownArchitectures.has(requested) || !knownArchitectures.has(host))
+    {
+        return true;
+    }
+    if (requested === host)
+    {
+        return true;
+    }
+    // An arm64 host runs x64 and x86 binaries (Windows ARM64 emulation; macOS Rosetta 2 covers x64).
+    if (host === 'arm64')
+    {
+        return true;
+    }
+    // x86 runs on x64 hosts via WOW64.
+    if (host === 'x64' && requested === 'x86')
+    {
+        return true;
+    }
+    return false;
+}
+
+export interface HostArchitectureResolution
+{
+    /** The architecture that should actually be used for the install. */
+    architecture: string;
+    /** The architecture that was originally requested or derived. */
+    requestedArchitecture: string;
+    /** The detected true host architecture (raw, as returned by getOSArch). */
+    hostArchitecture: string;
+    /** Whether the requested architecture differs from the host architecture (after canonicalization). */
+    differsFromHost: boolean;
+    /** Whether the requested architecture can actually run on the host. */
+    runnableOnHost: boolean;
+    /** Whether `architecture` was changed away from `requestedArchitecture`. */
+    corrected: boolean;
+    outcome: 'matches' | 'emulated' | 'honored-incompatible' | 'corrected';
+}
+
+/**
+ * Decides which architecture to install given what was requested, the detected host architecture, and
+ * whether the request came from an explicit external caller.
+ *
+ * Policy:
+ * - If the requested architecture can run on the host, honor it (this keeps x64-under-emulation working
+ *   and intentionally does NOT force native architecture under emulation).
+ * - If it cannot run on the host and an external caller explicitly asked for it, honor the request but
+ *   flag it so the caller is warned (the caller may be intentionally targeting another machine).
+ * - If it cannot run on the host and we derived it ourselves (no explicit caller), correct it to the host
+ *   architecture, since a host-detected value is more trustworthy than a stale/derived one.
+ */
+export function resolveHostCompatibleArchitecture(requestedArch: string, hostArch: string, callerExplicitlyRequested: boolean): HostArchitectureResolution
+{
+    const differsFromHost = canonicalCpuArchitecture(requestedArch) !== canonicalCpuArchitecture(hostArch);
+    const runnableOnHost = architectureCanRunOnHost(requestedArch, hostArch);
+
+    if (runnableOnHost)
+    {
+        return {
+            architecture: requestedArch, requestedArchitecture: requestedArch, hostArchitecture: hostArch,
+            differsFromHost, runnableOnHost, corrected: false, outcome: differsFromHost ? 'emulated' : 'matches'
+        };
+    }
+
+    if (callerExplicitlyRequested)
+    {
+        return {
+            architecture: requestedArch, requestedArchitecture: requestedArch, hostArchitecture: hostArch,
+            differsFromHost, runnableOnHost, corrected: false, outcome: 'honored-incompatible'
+        };
+    }
+
+    return {
+        architecture: canonicalCpuArchitecture(hostArch), requestedArchitecture: requestedArch, hostArchitecture: hostArch,
+        differsFromHost, runnableOnHost, corrected: true, outcome: 'corrected'
+    };
 }
 
 export function getDotnetExecutable(): string

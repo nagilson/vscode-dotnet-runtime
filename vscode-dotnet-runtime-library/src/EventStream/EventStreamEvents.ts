@@ -1594,6 +1594,16 @@ export class DotnetCommandFallbackArchitectureEvent extends DotnetCustomMessageE
     public readonly eventName = 'DotnetCommandFallbackArchitectureEvent';
 }
 
+export class DotnetArchitectureHostMismatchEvent extends DotnetCustomMessageEvent
+{
+    public readonly eventName = 'DotnetArchitectureHostMismatchEvent';
+}
+
+export class DotnetInstallArchitectureNotRunnableOnHost extends DotnetVisibleWarningEvent
+{
+    public readonly eventName = 'DotnetInstallArchitectureNotRunnableOnHost';
+}
+
 export class DotnetCommandFallbackOSEvent extends DotnetCustomMessageEvent
 {
     public readonly eventName = 'DotnetCommandFallbackOSEvent';
