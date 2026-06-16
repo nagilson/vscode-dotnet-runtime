@@ -318,11 +318,13 @@ The maintainer asked whether anything relies on `sdk` being dropped today. Findi
 
 ## Commit 1 — Make local SDK installs self-isolating and self-describing (library)
 
-**Goal:** before any acquire wiring, fix two install-identity problems in the library so a local SDK is
-isolated and unambiguously identified: (A) give each local SDK its own folder, and (B) tag its
-install-id with `~sdk`. Both **must land before** the acquire wiring (next commit); otherwise
-`uninstallLocal` of a local SDK would wipe every runtime + SDK under `.dotnet` (see finding 6) and the
-id would remain ambiguous with a local runtime (finding 5).
+**Goal:** before any acquire wiring, fix the library's install-identity handling so a local SDK is
+isolated and unambiguously identified: (A) give each local SDK its own folder, (B) tag its install-id
+with `~sdk`, and (C) fix the `getAssumedInstallInfo` mode-precedence bug so SDK is never mislabeled as
+runtime. A/B **must land before** the acquire wiring (next commit); otherwise `uninstallLocal` of a
+local SDK would wipe every runtime + SDK under `.dotnet` (see finding 6) and the id would remain
+ambiguous with a local runtime (finding 5). C is a one-line correctness fix in the same file as B
+(finding/gap 4).
 
 ### Part A — Per-install folder for local SDK
 
@@ -386,11 +388,6 @@ legacy-only helpers (`getAssumedInstallInfo`, `existingLegacyInstalls`, `removeM
 only handle bare ids without `~`. Add a short comment on `getInstallIdCustomArchitecture` recording the
 "local SDK is `~sdk`, global SDK intentionally unmarked" rule.
 
-**Tests**
-- Add `getInstallIdCustomArchitecture` unit cases: local sdk → `8.0.408~<arch>~sdk`; global sdk →
-  `8.0.408-global~<arch>` (unchanged); local runtime → `8.0.5~<arch>` (unchanged); confirm
-  `isRuntimeInstallId` returns `false` for the local-sdk id and `true` for the runtime id.
-
 **Tests (Part A)**
 - Add a library unit test asserting `new SdkInstallationDirectoryProvider(p).getInstallDir('8.0.408~x64~sdk')`
   ends with `.dotnet/8.0.408~x64~sdk` and differs per install id.
@@ -402,6 +399,41 @@ only handle bare ids without `~`. Add a short comment on `getInstallIdCustomArch
   assert the new per-install folder. Without this, Commit 1A fails those tests.
 - End-to-end isolation is covered by the "uninstall one local SDK leaves runtimes intact" test in the
   tests commit.
+
+### Part C — Fix the `getAssumedInstallInfo` mode-precedence bug (gap 4)
+
+**File:** [vscode-dotnet-runtime-library/src/Utils/InstallIdUtilities.ts](vscode-dotnet-runtime-library/src/Utils/InstallIdUtilities.ts)
+(same file as Part B, so it lands together.)
+
+The last line of `getAssumedInstallInfo` has an operator-precedence bug:
+```ts
+// BUG: `??` binds TIGHTER than `?:`, so this parses as (mode ?? isRuntimeInstallId(id)) ? 'runtime' : 'sdk'.
+// => any non-null `mode` (including 'sdk' / 'aspnetcore') yields 'runtime'.
+installMode: mode ?? isRuntimeInstallId(id) ? 'runtime' : 'sdk'
+```
+Fix with explicit parentheses to match the documented intent ("use `mode` if given, else infer from
+the id"):
+```ts
+installMode: mode ?? (isRuntimeInstallId(id) ? 'runtime' : 'sdk')
+```
+- **Why now (not a follow-up):** `VersionResolver.getFullVersion` calls `getAssumedInstallInfo(version,
+  context.mode)` when resolution **fails**, to attach the install to the error event. Commit 2 routes
+  every accepted major.minor **SDK** request through `getFullVersion(_, 'sdk')`, so SDK resolution
+  failures (offline, transient API) now flow here with `mode === 'sdk'` — and today they'd be
+  mislabeled `runtime` in telemetry/error handling, exactly the attribution the rest of the plan works
+  to keep correct. The fix is one line and strictly corrects behavior (it also fixes the latent
+  `aspnetcore → runtime` mislabel).
+- **Safety:** for `mode === null/undefined` (legacy id with no mode) the behavior is unchanged
+  (`isRuntimeInstallId(id) ? 'runtime' : 'sdk'`); for `mode === 'runtime'` it's unchanged. Only the
+  previously-wrong `sdk`/`aspnetcore` cases change, to their correct values.
+- **Tests:** add unit cases — `getAssumedInstallInfo('8.0.408~x64~sdk', 'sdk').installMode === 'sdk'`;
+  `getAssumedInstallInfo(legacyRuntimeId, undefined).installMode === 'runtime'`;
+  `getAssumedInstallInfo(legacySdkId, undefined).installMode === 'sdk'`.
+
+**Tests**
+- Add `getInstallIdCustomArchitecture` unit cases: local sdk → `8.0.408~<arch>~sdk`; global sdk →
+  `8.0.408-global~<arch>` (unchanged); local runtime → `8.0.5~<arch>` (unchanged); confirm
+  `isRuntimeInstallId` returns `false` for the local-sdk id and `true` for the runtime id.
 
 **Verify:** `cd vscode-dotnet-runtime-library && npm run compile && npm run test`.
 
@@ -441,14 +473,19 @@ rejected; SDK versions resolve correctly.
     */
    export function assertValidLocalSdkVersion(version: string, eventStream: IEventStream, context: IAcquisitionWorkerContext): void
    {
-       // isFullySpecifiedVersion can THROW for some malformed 3-part inputs (e.g. "8.0.0", where the
-       // SDK band/patch parse fails) — treat any throw as "not valid" so we emit the friendly message.
-       let isFullySpecified = false;
-       try { isFullySpecified = isFullySpecifiedVersion(version, eventStream, context); } catch { isFullySpecified = false; }
-       const isMajorMinor = version.split('.').length === 2 && isNonSpecificMajorOrMajorMinorVersion(version);
-       if (isMajorMinor || isFullySpecified)
+       const parts = version.split('.').length;
+       // Check segment count FIRST, then call the strict classifier only for 3-part candidates.
+       // Calling isFullySpecifiedVersion on a 2-part "8.0" would post a noisy "bad long form" parse
+       // event (via isValidLongFormVersionFormat) even though "8.0" is a perfectly valid request (gap 5).
+       if (parts === 2 && isNonSpecificMajorOrMajorMinorVersion(version))
        {
-           return;
+           return; // major.minor (e.g. "8.0")
+       }
+       if (parts > 2)
+       {
+           // isFullySpecifiedVersion can THROW for some malformed 3-part inputs (e.g. "8.0.0", where the
+           // SDK band/patch parse fails) — treat any throw as "not valid" so we emit the friendly message.
+           try { if (isFullySpecifiedVersion(version, eventStream, context)) { return; } } catch { /* fall through */ }
        }
        const err = new DotnetVersionResolutionError(new EventCancellationError('BadContextualVersion',
            `Local .NET SDK acquisition accepts a major.minor (e.g. "8.0") or fully-specified (e.g. "8.0.408") version. ` +
@@ -458,6 +495,9 @@ rejected; SDK versions resolve correctly.
        throw err.error;
    }
    ```
+   - **Segment-count-first** (gap 5): `isFullySpecifiedVersion` → `isValidLongFormVersionFormat` posts a
+     "bad long form" parse event for `< 2`-period inputs, so calling it on a valid `8.0` would emit
+     misleading parse telemetry. Gating it behind `parts > 2` avoids that for every accepted major.minor.
    - Posting `DotnetVersionResolutionError` mirrors `validateVersionInput`/`getMajorMinor` so the
      failure shows up in telemetry the same way other bad-version rejections do.
    - The `try/catch` around `isFullySpecifiedVersion` matters: that classifier throws (not returns
@@ -465,19 +505,22 @@ rejected; SDK versions resolve correctly.
      `DotnetFeatureBandDoesNotExistError` instead of the friendly message.
    - It does **not** resolve — it only validates shape, so it stays single-responsibility. The caller
      decides resolve-vs-passthrough with a single `isFullySpecifiedVersion` check (below).
-   - Unit-test it directly (see Commit 5): `8.0`/`8.0.408` pass; `8`/`8.0.4xx`/`8.0.0`/garbage throw.
+   - Unit-test it directly (see Commit 5): `8.0`/`8.0.408` pass; `8`/`8.0.4xx`/`8.0.0`/garbage throw,
+     and assert **no** `DotnetVersionParseEvent` is posted for the accepted `8.0` case.
 
 3. Replace the version-resolution block with a **mode-aware** version: keep the existing lenient
    passthrough for runtime/aspnetcore, and call the new validator for SDK. Also rename
    `runtimeVersionResolver` → `versionResolver`:
    ```ts
-   // imports from 'vscode-dotnet-runtime-library': assertValidLocalSdkVersion, isFullySpecifiedVersion
+   // imports from 'vscode-dotnet-runtime-library': assertValidLocalSdkVersion
    const versionResolver = new VersionResolver(workerContext);
    if (mode === 'sdk')
    {
        assertValidLocalSdkVersion(commandContext.version, globalEventStream, workerContext); // fail early on bad shape
-       // After validation the version is either fully-specified or major.minor.
-       if (!isFullySpecifiedVersion(commandContext.version, globalEventStream, workerContext))
+       // After validation the version is either major.minor (2 parts) or fully-specified (>2 parts).
+       // Use the segment count as the discriminator — do NOT re-call isFullySpecifiedVersion here, as it
+       // posts a spurious parse event for the valid major.minor case (gap 5).
+       if (commandContext.version.split('.').length === 2)
        {
            commandContext.version = await versionResolver.getFullVersion(commandContext.version, 'sdk'); // 8.0 -> latest patch
        }
@@ -1112,9 +1155,9 @@ gone.
 ## Suggested commit order (review-friendly)
 
 1. **Commit 1** — Library install-identity fixes for local SDK: per-install folder
-   (`SdkInstallationDirectoryProvider`) **and** `~sdk` install-id marker
-   (`getInstallIdCustomArchitecture`), plus the worker-test `getExpectedPath('sdk')` update; with unit
-   tests. Prerequisite safety/correctness fix; must precede the acquire wiring.
+   (`SdkInstallationDirectoryProvider`), `~sdk` install-id marker (`getInstallIdCustomArchitecture`),
+   the `getAssumedInstallInfo` mode-precedence fix (gap 4), and the worker-test `getExpectedPath('sdk')`
+   update; with unit tests. Prerequisite safety/correctness fix; must precede the acquire wiring.
 2. **Commit 2** — `dotnet.acquire` local SDK dispatch (switch + `acquireLocalSDK`), a reusable
    `assertValidLocalSdkVersion` validator in `VersionUtilities` (major.minor + fully-specified; reject
    major-only/feature-band early), `IDotnetAcquireContext.version` doc update, and global rejection
@@ -1195,3 +1238,87 @@ deleting the old extension, so the local-SDK path is proven before its only prio
   structured `installMode`/`isGlobal` fields, never id-string parsing. If global **runtime** support is
   ever added, global ids will need a mode marker (the mirror of the local case) and the auto-update
   filter will need to distinguish runtime-vs-sdk for global installs, not just `isGlobal`.
+
+---
+
+## Potential gaps / open edges (reviewer-raised)
+
+These were raised during review. Each is assessed as **fix now** (folded into the commits above) or
+**follow-up** (safe to defer), with rationale. Short version: gaps **4, 5, 9 are handled in-plan**;
+the rest are genuine but deferrable, with a couple I'd recommend opportunistically hardening.
+
+### Handled in this plan
+
+- **(4) `getAssumedInstallInfo` mislabels explicit SDK mode — FIX NOW.** Confirmed operator-precedence
+  bug (`??` binds tighter than `?:`, so any non-null `mode` returns `'runtime'`). Because Commit 2
+  routes accepted major.minor SDK requests through `getFullVersion(_, 'sdk')`, SDK resolution failures
+  now reach this helper with `mode === 'sdk'` and would be mislabeled `runtime` in telemetry. Fixed as
+  **Commit 1 Part C** (one-line parenthesization + unit tests). Agree with the reviewer that this one
+  shouldn't wait.
+- **(5) Noisy parse telemetry from the validator — FIX NOW (it's our new code).** The first draft of
+  `assertValidLocalSdkVersion` called `isFullySpecifiedVersion` on every input, which posts a
+  "bad long form" parse event for a valid `8.0`. Reworked in **Commit 2** to check segment count first
+  and only call the strict classifier for 3-part candidates; the caller likewise uses segment count
+  (not `isFullySpecifiedVersion`) for the resolve-vs-use decision. Added a unit assertion that no parse
+  event fires for the accepted `8.0` case. No reason to defer a fix to code we're introducing.
+- **(9) Exact-patch status/uninstall — FIX NOW (already Commit 4).** This is the same issue as
+  finding 12 and is fully addressed by **Commit 4** (skip resolution when the version is already
+  fully-specified, mode-agnostically). Listed here only to close the loop; nothing left to defer.
+
+### Recommended follow-ups (safe to defer; a couple worth opportunistic hardening)
+
+- **(1) `existingDotnetPath` short-circuits local SDK acquisition — FOLLOW-UP (recommend a small
+  now-decision).** Confirmed: `acquireLocal` calls `resolveExistingPathIfExists` with **no** mode
+  guard, and `ExistingPathResolver` returns the configured path when `providedPathMeetsAPIRequirement`
+  (mode-aware) passes — so `dotnet.acquire { mode:'sdk' }` can hand back a configured/global SDK path
+  instead of installing a local one, contradicting the "local SDK + don't set PATH" contract. Defensible
+  as a follow-up because it only triggers when a user has *explicitly* configured a path, and honoring
+  an existing SDK is arguably desirable. But the behavior is currently implicit. **Recommendation:** at
+  minimum document it in Commit 8; ideally make a one-line conscious choice in Commit 2 — either skip
+  the path setting for SDK (mirroring `findPath`'s `mode !== 'sdk'` guard) or keep it and document that
+  `existingDotnetPath` overrides local SDK acquisition. Cheap; I'd lean toward deciding it alongside
+  Commit 2 rather than discovering it in the field.
+- **(2) `x-dotnet-acquire` becomes a hidden SDK entry point — FOLLOW-UP.** Confirmed: `JsonInstaller`
+  forwards the package-json request verbatim to `dotnet.acquire` on startup/extension-change, so once
+  `mode:'sdk'` is accepted, any extension's `package.json` can trigger a local SDK install at launch
+  (and `installType:'global'` would hit the new global-reject guard). This is a **policy** question
+  more than a bug: do we want JSON-declared SDK installs? **Recommendation:** follow-up — decide policy
+  (allow SDK; reject/log `global` from the JSON path with a clear event), and add `JsonInstaller` tests
+  for an SDK request and a rejected global request (today's tests only cover the no-request scan). Not
+  blocking because the global-reject guard already prevents the most dangerous case (silent elevated
+  install), and a local SDK install is bounded/uninstallable.
+- **(3) `acquireGlobalSDK` defaults mode but doesn't enforce it — FOLLOW-UP (cheap; consider now).**
+  Confirmed `commandContext.mode = commandContext.mode ?? 'sdk'`, so a caller passing `mode:'runtime'`
+  builds the global installer with a runtime context. Pre-existing, but the migration makes the
+  runtime↔sdk boundary load-bearing. **Recommendation:** a one-line hardening (force `mode = 'sdk'`, or
+  reject non-sdk with a clear message) that pairs naturally with Commit 2's global-reject work; do it
+  then if convenient, otherwise a small follow-up. Low risk either way.
+- **(6) `findPath` (and the LM tool) skip extension-managed installs for SDK — FOLLOW-UP.** Confirmed
+  `findPath` guards `mode !== 'sdk'` for both the setting and the extension-managed lookup, and
+  `commands.md` documents that. After local SDK acquisition this is surprising: we can install a local
+  SDK but not rediscover it via `findPath`. This is a **larger** change (SDK path-search semantics, LM
+  tool messaging that currently claims it searched extension-managed installs) and is orthogonal to the
+  acquire/status/uninstall round-trip the plan delivers. **Recommendation:** follow-up; in the meantime
+  Commit 8 should explicitly document that local SDKs are returned via `acquire`/`acquireStatus`, not
+  `findPath`. Track as its own work item so the LM tool messaging is fixed in lockstep.
+- **(7) LM `uninstall_vscode_owned_dotnet_runtime` is runtime-only — FOLLOW-UP.** Confirmed the tool
+  description forbids SDKs and the implementation hardcodes runtime/aspnetcore. Once local SDKs are
+  managed installs, agents have no local-SDK uninstall tool and could misroute to system-SDK uninstall.
+  This is **LM-surface scope**, not core acquisition. **Recommendation:** follow-up — decide whether to
+  extend the tool to local SDKs (preferred for symmetry with the new capability) or keep it
+  intentionally unavailable; update the tool description either way. Note it next to gap 6 since both
+  are LM-tool consistency items and should ship together.
+- **(8) Auto-update test helper uses non-real ids — ADDRESS IN COMMIT 7; existing helper cleanup is
+  FOLLOW-UP.** Confirmed `LocalInstallUpdateService.test.ts` synthesizes ids as
+  `${version}~${arch}~${installMode}${isGlobal?'~global':''}`, which matches **neither** real runtime
+  ids (no mode suffix), real global SDK ids (`-global`, no `~sdk`), nor the plan's asymmetric local/
+  global SDK marker rule. New SDK auto-update tests that reuse this helper could pass while missing the
+  exact id-encoding bug Commit 1B guards against. **Recommendation:** the **new** SDK auto-update tests
+  in Commit 7 must build ids via `getInstallIdCustomArchitecture` (real encoding); migrating the
+  pre-existing helper/fixtures to the real function is a separate cleanup that can be a follow-up.
+
+**Net:** I agree the bulk are deferrable. The only one I'd insist on (and have folded in) is **gap 4**;
+**5 and 9** are already in-plan; and I'd nudge to make a deliberate one-line decision on **1** and **3**
+while we're in `acquireLocal`/`acquireGlobalSDK` rather than leaving them implicit. If you'd rather keep
+this PR tightly scoped, 1/2/3/6/7/8-cleanup are all reasonable standalone follow-ups — none blocks the
+core local-SDK capability.
