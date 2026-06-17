@@ -2400,7 +2400,7 @@ util-deprecate@^1.0.1:
     fsevents "^2.3.3"
 
 "vscode-dotnet-runtime@file:../vscode-dotnet-runtime-extension":
-  version "3.1.0"
+  version "3.2.0"
   resolved "file:../vscode-dotnet-runtime-extension"
   dependencies:
     axios "^1.13.6"

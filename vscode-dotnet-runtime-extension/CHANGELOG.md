@@ -5,12 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog],
 and this project adheres to [Semantic Versioning].
 
-## [Unreleased]
+## [3.2.0] - 2026-06
 
 ### Breaking change: local SDK acquisition moved into the .NET Install Tool
 
 - The standalone `vscode-dotnet-sdk` extension (`ms-dotnettools.vscode-dotnet-sdk`, unshipped for over a year) is removed. Its `dotnet-sdk.*` commands no longer exist.
-- To install a local (user-folder) .NET SDK, call `dotnet.acquire` with `{ mode: 'sdk' }`. Local SDK acquisition accepts a `major.minor` version (resolved to the latest patch) or a fully specified version (e.g. `8.0.408`, installed exactly); major-only and feature band versions remain a `dotnet.acquireGlobalSDK`-only capability. As with runtimes, the `PATH` is not configured for local SDK installs.
+- To install a local (user-folder) .NET SDK with .NET Install Tool 3.2.0 or later, call `dotnet.acquire` with `{ mode: 'sdk' }`. Local SDK acquisition accepts a `major.minor` version (resolved to the latest patch) or a fully specified version (e.g. `8.0.408`, installed exactly); major-only and feature band versions remain a `dotnet.acquireGlobalSDK`-only capability. As with runtimes, the `PATH` is not configured for local SDK installs.
 - Local SDKs install under the VS Code-managed global-storage `.dotnet` folder, one isolated subfolder per SDK version. Older installs created by the removed SDK extension are orphaned (harmless) and may be removed manually.
 - Local SDKs are now automatically updated like local runtimes (older patches are replaced and uninstalled when not in use). Auto-update follows the channel's latest SDK and may cross feature bands (e.g. `8.0.3xx` → `8.0.4xx`). Global SDKs are not auto-updated.
 - `dotnet.acquireStatus` and `dotnet.uninstall` now accept a fully specified version (not just `major.minor`) for all modes, so a pinned install can be status-checked and removed by the exact version string even after a newer patch ships.
