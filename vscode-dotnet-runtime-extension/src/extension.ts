@@ -489,17 +489,20 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
 
             globalEventStream.post(new DotnetAcquisitionStatusRequested(commandContext.version, commandContext.requestingExtensionId));
 
-            // Caveat : acquireStatus expects only a major.minor, so fully specified versions won't be checked here
-
-            const existingOfflinePath = await getExistingInstallOffline(worker, workerContext);
-            if (existingOfflinePath)
+            // A fully specified version is checked exactly by acquireStatus (an offline install-id lookup), so the
+            // major.minor offline shortcut and resolution are only for a major.minor request.
+            if (commandContext.version.split('.').length <= 2)
             {
-                return Promise.resolve(existingOfflinePath);
+                const existingOfflinePath = await getExistingInstallOffline(worker, workerContext);
+                if (existingOfflinePath)
+                {
+                    return Promise.resolve(existingOfflinePath);
+                }
+
+                const versionResolver = new VersionResolver(workerContext);
+                commandContext.version = await versionResolver.getFullVersion(commandContext.version, commandContext.mode);
             }
 
-            const runtimeVersionResolver = new VersionResolver(workerContext);
-            const resolvedVersion = await runtimeVersionResolver.getFullVersion(commandContext.version, commandContext.mode);
-            commandContext.version = resolvedVersion;
             const dotnetPath = await worker.acquireStatus(workerContext, commandContext.mode);
             return dotnetPath;
         }, getIssueContext(existingPathConfigWorker)(commandContext.errorConfiguration, 'acquireStatus'));
@@ -860,7 +863,10 @@ ${JSON.stringify(commandContext)}`));
                 // Use the pre-created workerContext if available, otherwise create it
                 const ctx = workerContext ?? getAcquisitionWorkerContext(commandContext.mode, commandContext);
 
-                if (commandContext.installType === 'local' && !force && !(onlyCheckLiveDependents && commandContext.version.split('.').length > 1)) // if using force mode, we are also using the UI, which passes the fully specified version to uninstall only
+                // A fully specified version targets an exact install id, so resolve only a major.minor request to its
+                // latest patch. force (UI) and auto-update both pass fully specified versions and so already skip this.
+                const versionIsFullySpecified = commandContext.version.split('.').length > 2;
+                if (commandContext.installType === 'local' && !force && !versionIsFullySpecified)
                 {
                     const versionResolver = new VersionResolver(ctx);
                     const resolvedVersion = await versionResolver.getFullVersion(commandContext.version, commandContext.mode);
