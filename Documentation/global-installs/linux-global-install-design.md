@@ -294,7 +294,7 @@ Each `sudo` command should be run separately by the && and will require an eleva
 
 _We will update the SDK extension naming. Chet is on top of this._
 
-The .NET SDK Extension and .NET Runtime Extension are branded separately. The SDK Extension is branded for the education bundle only and the runtime extension is branded to only install the runtime. I think we should rebrand the runtime extension and add global sdk and global runtime support to it.
+Earlier iterations branded SDK and runtime acquisition separately. The current .NET Install Tool consolidates this into one extension that provides commands and APIs for extensions to find, install, uninstall, and manage .NET runtimes and SDKs.
 
 ## Linux Uninstallation
 

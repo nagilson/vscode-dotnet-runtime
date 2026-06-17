@@ -4,7 +4,7 @@
 
 # Basic Usage
 
-Currently, most extensions rely on the .NET Runtime Extension to acquire .NET. Of course, this only acquires the runtime, which means many devtool capabilities are not available. The .NET SDK Extension that is currently released only allows local installs. We have expanded the API to allow global installs.
+Extensions rely on the .NET Install Tool to acquire and manage .NET for VS Code. The tool now provides commands and APIs for local runtime, local SDK, and global SDK acquisition, so devtool extensions can request the .NET shape they need through a single extension.
 
 The difference between requesting a local and global SDK is quite simple. You just set the global flag. As marked in https://github.com/dotnet/vscode-dotnet-runtime/issues/763, here is the spec:
 

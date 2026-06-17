@@ -7,7 +7,7 @@ Described below is an overview of the changes made to enable supporting global .
 
 # Extension Plan
 
-We have added functionality to the .NET SDK Extension to install the SDK Globally. That extension will also be able to install the .NET Runtime globally for use by the .NET SDK.
+We added global SDK installation support to the .NET Install Tool. Earlier iterations split SDK and runtime acquisition across separate extensions; the current tool provides VS Code commands and APIs for extensions to find, install, uninstall, and manage .NET runtimes and SDKs.
 
 > :apple: The .NET Education Bundle APIs will be unaffected as we have just added a global option, however the extension will be re-branded to remove the remarks of 'do NOT use,' as well as the 'education bundle' marketing.
 

@@ -1,7 +1,7 @@
 {
 	"name": "sample-extension",
 	"displayName": "Sample",
-	"description": "A sample extension to show how the vscode-dotnet-runtime extension is used.",
+	"description": "A sample extension that demonstrates the .NET Install Tool commands and APIs.",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/dotnet/vscode-dotnet-runtime.git"
@@ -47,7 +47,7 @@
 			},
 			{
 				"command": "sample.dotnet.uninstallAll",
-				"title": "Uninstall all .NET runtimes",
+				"title": "Uninstall all managed .NET installs",
 				"category": "Sample"
 			},
 			{
@@ -62,17 +62,17 @@
 			},
 			{
 				"command": "sample.dotnet.showAcquisitionLog",
-				"title": "Show .NET runtime acquisition log",
+				"title": "Show .NET Install Tool acquisition log",
 				"category": "Sample"
 			},
 			{
 				"command": "sample.dotnet.getAcquisitionLog",
-				"title": "Get the .NET runtime acquisition log file path",
+				"title": "Get the .NET Install Tool acquisition log file path",
 				"category": "Sample"
 			},
 			{
 				"command": "sample.dotnet.acquireGlobalSDK",
-				"title": "Install .NET SDK Globally via .NET Install Tool (Former Runtime Extension)",
+				"title": "Install .NET SDK globally via .NET Install Tool",
 				"category": "Sample"
 			},
 			{
@@ -107,7 +107,7 @@
 			},
 			{
 				"command": "sample.dotnet.forceUpdate",
-				"title": "Force update of .NET runtimes",
+				"title": "Force update of managed .NET installs",
 				"category": "Sample"
 			},
 			{

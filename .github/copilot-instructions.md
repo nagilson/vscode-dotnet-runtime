@@ -7,8 +7,8 @@ This document provides guidance for GitHub Copilot when working with the vscode-
 This repository contains VS Code extensions for acquiring and managing .NET runtimes and SDKs:
 
 - **vscode-dotnet-runtime-library**: Core library for .NET acquisition logic (shared by extensions)
-- **vscode-dotnet-runtime-extension**: The .NET Install Tool. Installs .NET runtimes and local/global .NET SDKs (designed to be used by other extensions)
-- **sample**: Sample extension demonstrating usage of the runtime acquisition APIs
+- **vscode-dotnet-runtime-extension**: The .NET Install Tool. Provides VS Code commands/APIs for extensions to find, install, uninstall, and manage .NET runtimes and SDKs
+- **sample**: Sample extension demonstrating usage of the .NET Install Tool APIs
 
 ### Architecture
 

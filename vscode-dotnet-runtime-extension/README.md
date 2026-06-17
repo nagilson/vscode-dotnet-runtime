@@ -1,6 +1,6 @@
 # .NET Install Tool
 
-This extension provides a unified way for other extensions like the [C#] and [C# Dev Kit] extensions to install local versions of the .NET Runtime, and machine-wide versions of the .NET SDK. Those extensions tell the .NET Install Tool when they would like a .NET SDK to be on the machine, and we install one for them if there's not already one that matches the SDK they need to run properly. Users can also install the .NET SDK themselves by reading below.
+This extension provides VS Code commands and APIs that help extensions find, install, uninstall, and manage .NET for VS Code. Extensions like [C#] and [C# Dev Kit] use the .NET Install Tool to acquire shared .NET runtimes and SDKs, whether local to VS Code or installed machine-wide. Users can also install the .NET SDK themselves by reading below.
 
 
 ## Why do I have this extension?
@@ -14,7 +14,7 @@ This extension was probably included as a dependency of one of the following ext
 * [CMake]
 * [Bicep]
 
-The above extensions call into this extension to provide a unified way of downloading shared .NET Runtimes or .NET SDKs. If you already have an installation of .NET that you'd like to use, see [the troubleshooting section below](#i-already-have-a-net-runtime-or-sdk-installed-and-i-want-to-use-it). If you want to remove this extension completely, you will need to uninstall any extensions that depend on it first. If this extension is uninstalled, any .NET Runtimes installed by it will also be removed.
+The above extensions call into this extension for a unified way to find, download, and manage shared .NET runtimes or SDKs. If you already have an installation of .NET that you'd like to use, see [the troubleshooting section below](#i-already-have-a-net-runtime-or-sdk-installed-and-i-want-to-use-it). If you want to remove this extension completely, you will need to uninstall any extensions that depend on it first. If this extension is uninstalled, any .NET installations managed by it will also be removed.
 
 ## Using the extension yourself
 
@@ -96,9 +96,9 @@ You can add the proxy in the extension settings like following the advice above 
 
 ## Information for repo contributors
 
-### Goals: Acquiring .NET Runtimes for extensions
+### Goals: Managing .NET for extensions
 
-Prior to the release of this extension, extension authors had no way of knowing if the .NET Runtime was installed on their target machines. Other solutions had a number of challenges:
+Prior to the release of this extension, extension authors had no shared way to find, install, uninstall, and manage the .NET runtimes and SDKs their VS Code extension components need. Other solutions had a number of challenges:
 
 1. **Duplication of .NET runtimes and slow updates**: Each extension was acquiring its own copy of .NET, wasting disk space.
 2. **Clean up**: When extensions installed .NET in a non-VSCode-managed folder location it was likely to be left behind.

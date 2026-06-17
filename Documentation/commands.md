@@ -12,7 +12,7 @@ This article outlines the commands exposed by the .NET Install Tool. To see thes
 
 > **Sample:** See [`sample.helloworld`](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/sample/src/extension.ts) and [`sample.dotnet.acquire`](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/sample/src/extension.ts) for usage examples.
 
-This command will install a .NET runtime at a user-level folder. It accepts a [IDotnetAcquireContext](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetAcquireContext.ts) object and returns a [IDotnetAcquireResult](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetAcquireResult.ts), which contains the path to the .NET runtime executable. The extension will automatically identify and install the latest patch of the provided version. It is generally recommended that extension authors call this command immediately on every extension start up to ensure that the .NET runtime has been installed and is ready to use.
+This command installs a local .NET runtime, ASP.NET Core runtime, or SDK in a user-level folder. It accepts a [IDotnetAcquireContext](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetAcquireContext.ts) object and returns a [IDotnetAcquireResult](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetAcquireResult.ts), which contains the path to the `dotnet` executable. The extension will automatically identify and install the latest patch of the provided version when a major.minor version is requested. It is generally recommended that extension authors call this command immediately on every extension startup to ensure that the .NET install they need is available and ready to use.
 
 The `mode` field of the context selects what to install: `runtime` (default), `aspnetcore`, or `sdk`. With `mode: 'sdk'` this command installs a **local (user-folder) .NET SDK**. Local SDKs do **not** configure the `PATH`; the caller receives the install path via `IDotnetAcquireResult.dotnetPath` and is responsible for using it. To install a system-wide SDK instead, use [`dotnet.acquireGlobalSDK`](#dotnetacquireglobalsdk). Requesting `installType: 'global'` from `dotnet.acquire` is rejected.
 
@@ -120,7 +120,7 @@ This is a **user-facing** command that presents a quick-pick menu listing all .N
 
 > **Sample:** See [`sample.dotnet.uninstallAll`](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/sample/src/extension.ts) for a usage example.
 
-This command uninstalls all .NET runtimes managed by this extension. It accepts an optional [IDotnetUninstallContext](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetUninstallContext.ts) object and returns `0` on success.
+This command uninstalls all local .NET installations managed by this extension, including runtimes and SDKs. It accepts an optional [IDotnetUninstallContext](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetUninstallContext.ts) object and returns `0` on success.
 
 ### dotnet.acquireGlobalSDKPublic
 
