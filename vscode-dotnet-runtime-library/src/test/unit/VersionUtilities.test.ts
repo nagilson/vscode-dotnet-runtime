@@ -146,4 +146,32 @@ suite('Version Utilities Unit Tests', function ()
         assert.equal(resolver.isValidLongFormVersionFormat(badSDKVersionPeriods, mockEventStream, mockCtx), false, 'It detects a version with a bad number of periods');
     });
 
+    suite('assertValidLocalSdkVersion', function ()
+    {
+        test('accepts a major.minor version', function ()
+        {
+            assert.doesNotThrow(() => resolver.assertValidLocalSdkVersion(majorMinorOnly, mockEventStream, mockCtx));
+        });
+
+        test('accepts a fully-specified version', function ()
+        {
+            assert.doesNotThrow(() => resolver.assertValidLocalSdkVersion(fullySpecifiedVersion, mockEventStream, mockCtx));
+        });
+
+        test('rejects major-only, feature band, and malformed versions', function ()
+        {
+            assert.throws(() => resolver.assertValidLocalSdkVersion(majorOnly, mockEventStream, mockCtx));
+            assert.throws(() => resolver.assertValidLocalSdkVersion(featureBandVersion, mockEventStream, mockCtx));
+            assert.throws(() => resolver.assertValidLocalSdkVersion('7.0.0', mockEventStream, mockCtx));
+        });
+
+        test('does not post a parse event for an accepted major.minor version', function ()
+        {
+            const isolatedStream = new MockEventStream();
+            resolver.assertValidLocalSdkVersion(majorMinorOnly, isolatedStream, mockCtx);
+            assert.isEmpty(isolatedStream.events.filter(e => e.constructor.name === 'DotnetVersionParseEvent'),
+                'A valid major.minor SDK request must not emit version-parse telemetry');
+        });
+    });
+
 });

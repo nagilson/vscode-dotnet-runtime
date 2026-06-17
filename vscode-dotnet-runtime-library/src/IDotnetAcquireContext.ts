@@ -12,10 +12,13 @@ export interface IDotnetAcquireContext
      * @remarks
      * The data required to acquire either the sdk or the runtimes.
      *
-     * @property version - The major.minor version of the SDK or Runtime desired.
+     * @property version - The version of the SDK or Runtime desired. Accepted formats depend on mode and installType:
      *
-     * NOTE: For global SDK installations, more options are available.
-     * The version can be provided in the following format in this acquisition:
+     * Local runtime / aspnetcore (dotnet.acquire): major.minor (e.g. 8.0). A fully-specified version (e.g. 8.0.3)
+     * is also accepted, but only as an unsupported testing affordance.
+     * Local SDK (dotnet.acquire, mode 'sdk'): major.minor (e.g. 8.0, resolved to the latest patch) or a
+     * fully-specified version (e.g. 8.0.408, installed exactly). Major-only and feature band are not accepted.
+     * Global SDK (dotnet.acquireGlobalSDK): more options are available:
      * Major (e.g: 6)
      * Major.Minor (e.g: 3.1)
      * Feature Band (e.g: 7.0.1xx or 7.0.10x)

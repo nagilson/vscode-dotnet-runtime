@@ -261,6 +261,44 @@ export function isNonSpecificMajorOrMajorMinorVersion(version: string): boolean
 }
 
 /**
+ * Throws unless `version` is acceptable for a local SDK acquisition: a major.minor (e.g. '8.0', resolved
+ * to the latest patch) or a fully-specified patch (e.g. '8.0.408', installed exactly). Major-only,
+ * feature bands (e.g. '8.0.4xx'), and malformed versions are a dotnet.acquireGlobalSDK capability and
+ * are rejected here so the caller fails fast instead of deep in the install script.
+ */
+export function assertValidLocalSdkVersion(version: string, eventStream: IEventStream, context: IAcquisitionWorkerContext): void
+{
+    const segments = version.split('.').length;
+    // isFullySpecifiedVersion posts a parse event for non-three-part input, so gate it behind the segment count to avoid spurious telemetry for a valid major.minor.
+    if (segments === 2 && isNonSpecificMajorOrMajorMinorVersion(version))
+    {
+        return;
+    }
+    // isFullySpecifiedVersion throws for malformed three-part input (e.g. '8.0.0' has no SDK band); treat a throw as invalid.
+    if (segments > 2)
+    {
+        try
+        {
+            if (isFullySpecifiedVersion(version, eventStream, context))
+            {
+                return;
+            }
+        }
+        catch
+        {
+            // fall through to the rejection below
+        }
+    }
+
+    const error = new DotnetVersionResolutionError(new EventCancellationError('BadContextualVersion',
+        `Local .NET SDK acquisition accepts a major.minor (e.g. "8.0") or fully-specified (e.g. "8.0.408") version. ` +
+        `Major-only and feature band (e.g. "8.0.4xx") versions are only supported by dotnet.acquireGlobalSDK. Got "${version}".`),
+        getInstallFromContext(context));
+    eventStream.post(error);
+    throw error.error;
+}
+
+/**
  *
  * @param version the requested version, which may be only a major (e.g. '8') or major.minor (e.g. '8.0').
  * @returns the version normalized to the major.minor.1xx feature band (e.g. '8.0.1xx') when only a major or

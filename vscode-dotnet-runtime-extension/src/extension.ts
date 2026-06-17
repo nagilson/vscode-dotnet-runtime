@@ -12,6 +12,7 @@ import
 {
     AcquireErrorConfiguration,
     AcquisitionInvoker,
+    assertValidLocalSdkVersion,
     callWithErrorHandling,
     CommandExecutor,
     directoryProviderFactory,
@@ -259,7 +260,20 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
                     `Cannot acquire .NET version "${commandContext.version}". Please provide a valid version.`);
             }
 
-            if (!ignorePathSetting)
+            if (commandContext.installType === 'global')
+            {
+                throw new EventCancellationError('BadContextualInstallTypeError',
+                    `dotnet.acquire only performs local (user-folder) installs. For a system-wide SDK, call dotnet.acquireGlobalSDK instead.`);
+            }
+
+            // Reject an invalid SDK version before the existing-install lookup so it cannot match an unrelated install by major.minor.
+            if (mode === 'sdk')
+            {
+                assertValidLocalSdkVersion(commandContext.version, globalEventStream, workerContext);
+            }
+
+            // The existingDotnetPath setting points at a runtime to run on, not an SDK to build with, so it never overrides a local SDK install.
+            if (!ignorePathSetting && mode !== 'sdk')
             {
                 const existingPath = await resolveExistingPathIfExists(existingPathConfigWorker, commandContext, workerContext, utilContext);
                 if (existingPath)
@@ -288,11 +302,21 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
             }
 
             // Note: This will impact the context object given to the worker and error handler since objects own a copy of a reference in JS.
-            const runtimeVersionResolver = new VersionResolver(workerContext);
-            commandContext.version = commandContext.version.split('.')?.length > 2 ? commandContext.version : await runtimeVersionResolver.getFullVersion(commandContext.version, mode);
+            // A fully specified version is used verbatim; a major.minor resolves to the latest patch for the mode.
+            const versionResolver = new VersionResolver(workerContext);
+            commandContext.version = commandContext.version.split('.')?.length > 2 ? commandContext.version : await versionResolver.getFullVersion(commandContext.version, mode);
 
             const acquisitionInvoker = new AcquisitionInvoker(workerContext, utilContext);
-            return mode === 'aspnetcore' ? worker.acquireLocalASPNET(workerContext, acquisitionInvoker) : worker.acquireLocalRuntime(workerContext, acquisitionInvoker);
+            switch (mode)
+            {
+                case 'sdk':
+                    return worker.acquireLocalSDK(workerContext, acquisitionInvoker);
+                case 'aspnetcore':
+                    return worker.acquireLocalASPNET(workerContext, acquisitionInvoker);
+                case 'runtime':
+                default:
+                    return worker.acquireLocalRuntime(workerContext, acquisitionInvoker);
+            }
         }, getIssueContext(existingPathConfigWorker)(commandContext.errorConfiguration, 'acquire', commandContext.version), commandContext.requestingExtensionId, workerContext);
 
         const installationId = getInstallIdCustomArchitecture(commandContext.version, commandContext.architecture, mode, 'local');
@@ -313,6 +337,8 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
     const dotnetAcquireGlobalSDKRegistration = vscode.commands.registerCommand(`${commandPrefix}.${commandKeys.acquireGlobalSDK}`, async (commandContext: IDotnetAcquireContext): Promise<IDotnetAcquireResult | undefined> =>
     {
         commandContext.mode = commandContext.mode ?? 'sdk' as DotnetInstallMode;
+        // Error/telemetry paths derive the install id from the context; without this they would classify a global SDK as a local install.
+        commandContext.installType = commandContext.installType ?? 'global' as DotnetInstallType;
 
         if (commandContext.requestingExtensionId === undefined)
         {
