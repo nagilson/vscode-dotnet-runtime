@@ -164,6 +164,70 @@ ${stderr}`);
         }
     });
 
+    const sampleAcquireSDKRegistration = vscode.commands.registerCommand('sample.dotnet.acquireSDK', async (version: string | undefined) =>
+    {
+        await callAcquireAPI(version, 'sdk');
+    });
+
+    const sampleAcquireSDKStatusRegistration = vscode.commands.registerCommand('sample.dotnet.acquireSDKStatus', async (version: string | undefined) =>
+    {
+        if (!version)
+        {
+            version = await vscode.window.showInputBox({
+                placeHolder: '8.0',
+                value: '8.0',
+                prompt: '.NET SDK version, i.e. 8.0',
+            });
+        }
+
+        try
+        {
+            await vscode.commands.executeCommand('dotnet.showAcquisitionLog');
+            const status = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquireStatus', { version, requestingExtensionId, mode: 'sdk' });
+            vscode.window.showInformationMessage(status === undefined ? '.NET SDK is not installed' : `.NET SDK version ${version} installed at ${status.dotnetPath}`);
+        }
+        catch (error)
+        {
+            vscode.window.showErrorMessage((error as Error).toString());
+        }
+    });
+
+    const sampleUninstallSDKRegistration = vscode.commands.registerCommand('sample.dotnet.uninstallSDK', async (version: string | undefined) =>
+    {
+        if (!version)
+        {
+            version = await vscode.window.showInputBox({
+                placeHolder: '8.0',
+                value: '8.0',
+                prompt: '.NET SDK version to uninstall, i.e. 8.0',
+            });
+        }
+
+        try
+        {
+            await vscode.commands.executeCommand('dotnet.uninstall', { version, requestingExtensionId, mode: 'sdk', installType: 'local' });
+            vscode.window.showInformationMessage(`.NET SDK ${version} uninstalled.`);
+        }
+        catch (error)
+        {
+            vscode.window.showErrorMessage((error as Error).toString());
+        }
+    });
+
+    const sampleUninstallAllSDKRegistration = vscode.commands.registerCommand('sample.dotnet.uninstallAllSDK', async () =>
+    {
+        try
+        {
+            // uninstallAll is mode-agnostic: it removes every VS Code-managed install, runtimes and SDKs alike.
+            await vscode.commands.executeCommand('dotnet.uninstallAll');
+            vscode.window.showInformationMessage('.NET runtimes and SDKs uninstalled.');
+        }
+        catch (error)
+        {
+            vscode.window.showErrorMessage((error as Error).toString());
+        }
+    });
+
     const sampleResetUpdateSuccessTime = vscode.commands.registerCommand('sample.dotnet.resetUpdateTimer', async () =>
     {
         try
@@ -350,6 +414,10 @@ ${JSON.stringify(result) ?? 'undefined'}`);
         sampleAcquireASPNETRegistration,
         sampleAcquireStatusRegistration,
         sampleDotnetUninstallAllRegistration,
+        sampleAcquireSDKRegistration,
+        sampleAcquireSDKStatusRegistration,
+        sampleUninstallSDKRegistration,
+        sampleUninstallAllSDKRegistration,
         sampleConcurrentTest,
         sampleConcurrentASPNETTest,
         sampleShowAcquisitionLogRegistration,

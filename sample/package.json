@@ -86,6 +86,26 @@
 				"category": "Sample"
 			},
 			{
+				"command": "sample.dotnet.acquireSDK",
+				"title": "Acquire a local .NET SDK via .NET Install Tool",
+				"category": "Sample"
+			},
+			{
+				"command": "sample.dotnet.acquireSDKStatus",
+				"title": "Check the status of a local .NET SDK",
+				"category": "Sample"
+			},
+			{
+				"command": "sample.dotnet.uninstallSDK",
+				"title": "Uninstall a local .NET SDK",
+				"category": "Sample"
+			},
+			{
+				"command": "sample.dotnet.uninstallAllSDK",
+				"title": "Uninstall all .NET runtimes and SDKs",
+				"category": "Sample"
+			},
+			{
 				"command": "sample.dotnet-sdk.acquire",
 				"title": "Acquire .NET SDK",
 				"category": "Sample"
