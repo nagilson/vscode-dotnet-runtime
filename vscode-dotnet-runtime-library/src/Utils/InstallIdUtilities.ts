@@ -5,7 +5,7 @@
 
 import { DotnetCoreAcquisitionWorker } from '../Acquisition/DotnetCoreAcquisitionWorker';
 import { DotnetInstall, looksLikeRuntimeVersion } from '../Acquisition/DotnetInstall';
-import { DOTNET_INSTALL_MODE_LIST, DotnetInstallMode } from '../Acquisition/DotnetInstallMode';
+import { DotnetInstallMode } from '../Acquisition/DotnetInstallMode';
 import { IAcquisitionWorkerContext } from '../Acquisition/IAcquisitionWorkerContext';
 import { DotnetInstallType } from '../IDotnetAcquireContext';
 
@@ -47,8 +47,8 @@ export function getInstallFromContext(ctx: IAcquisitionWorkerContext): DotnetIns
 export function isRuntimeInstallId(installId: string): boolean
 {
     const installIdVersion = getVersionFromLegacyInstallId(installId);
-    return !(DOTNET_INSTALL_MODE_LIST.filter((x: string) => x !== 'runtime')).some((mode) => installId.includes(mode))
-        && looksLikeRuntimeVersion(installIdVersion);
+    const hasNonRuntimeModeMarker = installId.includes('sdk') || installId.includes('aspnetcore');
+    return !hasNonRuntimeModeMarker && looksLikeRuntimeVersion(installIdVersion);
 }
 
 export function isGlobalLegacyInstallId(installId: string): boolean

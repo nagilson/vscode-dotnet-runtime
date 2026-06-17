@@ -41,6 +41,12 @@ suite('InstallIdUtilities Unit Tests', function ()
             assert.isFalse(isRuntimeInstallId('8.0.408~x64~sdk'));
         });
 
+        test('treats non-runtime mode markers as not runtime even when the version looks like a runtime', function ()
+        {
+            assert.isFalse(isRuntimeInstallId('8.0.5~x64~sdk'));
+            assert.isFalse(isRuntimeInstallId('8.0.5~x64~aspnetcore'));
+        });
+
         test('treats an unmarked local id as a runtime', function ()
         {
             assert.isTrue(isRuntimeInstallId('8.0.5~x64'));
