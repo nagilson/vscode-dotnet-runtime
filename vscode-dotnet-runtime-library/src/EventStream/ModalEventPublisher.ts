@@ -16,6 +16,10 @@ import
   DotnetGlobalSDKAcquisitionRequested,
   DotnetGlobalSDKAcquisitionStarted,
   DotnetGlobalSDKAcquisitionTotalSuccessEvent,
+  DotnetLocalSDKAcquisitionError,
+  DotnetLocalSDKAcquisitionRequested,
+  DotnetLocalSDKAcquisitionStarted,
+  DotnetLocalSDKAcquisitionTotalSuccessEvent,
   DotnetRuntimeAcquisitionRequested,
   DotnetRuntimeAcquisitionStarted,
   DotnetRuntimeAcquisitionTotalSuccessEvent,
@@ -39,7 +43,7 @@ export class ModalEventRepublisher implements IModalEventRepublisher
       switch (mode)
       {
         case 'sdk':
-          return event.installType === 'global' ? new DotnetGlobalSDKAcquisitionStarted(event.requestingExtensionId) : null;
+          return event.installType === 'global' ? new DotnetGlobalSDKAcquisitionStarted(event.requestingExtensionId) : new DotnetLocalSDKAcquisitionStarted(event.requestingExtensionId);
         case 'runtime':
           return new DotnetRuntimeAcquisitionStarted(event.requestingExtensionId);
         case 'aspnetcore':
@@ -53,7 +57,7 @@ export class ModalEventRepublisher implements IModalEventRepublisher
       switch (mode)
       {
         case 'sdk':
-          return event.installType === 'global' ? new DotnetGlobalSDKAcquisitionTotalSuccessEvent(event.install) : null;
+          return event.installType === 'global' ? new DotnetGlobalSDKAcquisitionTotalSuccessEvent(event.install) : new DotnetLocalSDKAcquisitionTotalSuccessEvent(event.install);
         case 'runtime':
           return new DotnetRuntimeAcquisitionTotalSuccessEvent(event.install);
         case 'aspnetcore':
@@ -67,7 +71,7 @@ export class ModalEventRepublisher implements IModalEventRepublisher
       switch (mode)
       {
         case 'sdk':
-          return event.installType === 'global' ? new DotnetGlobalSDKAcquisitionError(event.error, event.originalEventName, event.install) : null;
+          return event.installType === 'global' ? new DotnetGlobalSDKAcquisitionError(event.error, event.originalEventName, event.install) : new DotnetLocalSDKAcquisitionError(event.error, event.originalEventName, event.install);
         case 'runtime':
           return new DotnetRuntimeFinalAcquisitionError(event.error, event.originalEventName, event.install);
         case 'aspnetcore':
@@ -81,7 +85,7 @@ export class ModalEventRepublisher implements IModalEventRepublisher
       switch (mode)
       {
         case 'sdk':
-          return event.installType === 'global' ? new DotnetGlobalSDKAcquisitionRequested(event.startingVersion, event.requestingId, event.mode) : null;
+          return event.installType === 'global' ? new DotnetGlobalSDKAcquisitionRequested(event.startingVersion, event.requestingId, event.mode) : new DotnetLocalSDKAcquisitionRequested(event.startingVersion, event.requestingId, event.mode);
         case 'runtime':
           return new DotnetRuntimeAcquisitionRequested(event.startingVersion, event.requestingId, event.mode);
         case 'aspnetcore':

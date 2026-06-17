@@ -91,6 +91,12 @@ export class DotnetGlobalSDKAcquisitionStarted extends DotnetAcquisitionStartedB
     public readonly type = EventType.DotnetModalChildEvent;
 }
 
+export class DotnetLocalSDKAcquisitionStarted extends DotnetAcquisitionStartedBase
+{
+    public readonly eventName = 'DotnetLocalSDKAcquisitionStarted';
+    public readonly type = EventType.DotnetModalChildEvent;
+}
+
 export class DotnetASPNetRuntimeAcquisitionStarted extends DotnetAcquisitionStartedBase
 {
     public readonly eventName = 'DotnetASPNetRuntimeAcquisitionStarted';
@@ -150,6 +156,11 @@ export class DotnetGlobalSDKAcquisitionTotalSuccessEvent extends DotnetAcquisiti
     public readonly eventName = 'DotnetGlobalSDKAcquisitionTotalSuccessEvent';
 }
 
+export class DotnetLocalSDKAcquisitionTotalSuccessEvent extends DotnetAcquisitionTotalSuccessEventBase
+{
+    public readonly eventName = 'DotnetLocalSDKAcquisitionTotalSuccessEvent';
+}
+
 export class DotnetASPNetRuntimeAcquisitionTotalSuccessEvent extends DotnetAcquisitionTotalSuccessEventBase
 {
     public readonly eventName = 'DotnetASPNetRuntimeAcquisitionTotalSuccessEvent';
@@ -207,6 +218,11 @@ export class DotnetRuntimeAcquisitionRequested extends DotnetAcquisitionRequeste
 export class DotnetGlobalSDKAcquisitionRequested extends DotnetAcquisitionRequestedEventBase
 {
     public readonly eventName = 'DotnetGlobalSDKAcquisitionRequested';
+}
+
+export class DotnetLocalSDKAcquisitionRequested extends DotnetAcquisitionRequestedEventBase
+{
+    public readonly eventName = 'DotnetLocalSDKAcquisitionRequested';
 }
 
 export class DotnetASPNetRuntimeAcquisitionRequested extends DotnetAcquisitionRequestedEventBase
@@ -330,6 +346,12 @@ abstract class DotnetAcquisitionFinalErrorBase extends DotnetAcquisitionError{
 export class DotnetGlobalSDKAcquisitionError extends DotnetAcquisitionFinalErrorBase
 {
     public eventName = 'DotnetGlobalSDKAcquisitionError';
+    public verboseOutputOnly = true;
+}
+
+export class DotnetLocalSDKAcquisitionError extends DotnetAcquisitionFinalErrorBase
+{
+    public eventName = 'DotnetLocalSDKAcquisitionError';
     public verboseOutputOnly = true;
 }
 
