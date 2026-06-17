@@ -50,9 +50,9 @@ A sample call to the extension to call a global install would look like this, an
 ```ts
 
       try {
-            await vscode.commands.executeCommand('dotnet-sdk.showAcquisitionLog');
-            let commandContext : IDotnetAcquireContext = { version, requestingExtensionId, installType: 'global' };
-            await vscode.commands.executeCommand('dotnet-sdk.acquire', commandContext);
+            await vscode.commands.executeCommand('dotnet.showAcquisitionLog');
+            let commandContext : IDotnetAcquireContext = { version, requestingExtensionId };
+            await vscode.commands.executeCommand('dotnet.acquireGlobalSDK', commandContext);
         } catch (error) {
             vscode.window.showErrorMessage((error as Error).toString());
         }
@@ -86,7 +86,7 @@ We have an API you can call to get the recommended version. I would suggest usin
 To call this api, simple do the following. It is also marked in the sample extension.
 
 ```ts
-const result : IDotnetVersion | undefined = await vscode.commands.executeCommand('dotnet-sdk.recommendedVersion', { listRuntimes: false });
+const result : IDotnetVersion | undefined = await vscode.commands.executeCommand('dotnet.recommendedVersion', { listRuntimes: false });
 ```
 
 It returns the `IDotnetVersion`.

@@ -62,27 +62,6 @@ else
 fi
 popd
 
-echo ""
-echo "----------- Testing vscode-dotnet-sdk-extension -----------"
-echo ""
-pushd vscode-dotnet-sdk-extension
-rm -rf node_modules
-npm ci
-npm run test
-
-if [ $? -ne 0 ];
-then
-    echo ""
-    echo "${RED}.NET SDK Acquisition Extension Tests Failed.${NC}"
-    echo ""
-    RESULT=1
-else
-    echo ""
-    echo "${GREEN}.NET SDK Acquisition Extension Tests Succeeded.${NC}"
-    echo ""
-fi
-popd
-
 if [ $RESULT -ne 0 ];
 then
     echo ""

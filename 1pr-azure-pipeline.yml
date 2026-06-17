@@ -7,7 +7,6 @@ trigger:
     - main
   tags:
     include:
-    - SDK-v*
     - Runtime-v*
 pr:
   autoCancel: false

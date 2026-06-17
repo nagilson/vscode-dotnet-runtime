@@ -7,16 +7,15 @@ This document provides guidance for GitHub Copilot when working with the vscode-
 This repository contains VS Code extensions for acquiring and managing .NET runtimes and SDKs:
 
 - **vscode-dotnet-runtime-library**: Core library for .NET acquisition logic (shared by extensions)
-- **vscode-dotnet-runtime-extension**: Extension for installing .NET runtimes (designed to be used by other extensions)
-- **vscode-dotnet-sdk-extension**: Extension for installing .NET SDKs (for internal features, not for general use)
+- **vscode-dotnet-runtime-extension**: The .NET Install Tool. Installs .NET runtimes and local/global .NET SDKs (designed to be used by other extensions)
 - **sample**: Sample extension demonstrating usage of the runtime acquisition APIs
 
 ### Architecture
 
 The repository follows a layered architecture:
 1. **Library layer** (`vscode-dotnet-runtime-library`): Contains all acquisition logic, installers, version resolvers, and utilities
-2. **Extension layer** (`vscode-dotnet-runtime-extension`, `vscode-dotnet-sdk-extension`): VS Code extension wrappers that expose commands and APIs
-3. **Sample layer** (`sample`): Demonstrates proper usage of the extensions
+2. **Extension layer** (`vscode-dotnet-runtime-extension`): VS Code extension wrapper that exposes commands and APIs
+3. **Sample layer** (`sample`): Demonstrates proper usage of the extension
 
 Core logic goes in the library, UI/commands in extensions.
 
@@ -110,9 +109,6 @@ npm update && yarn upgrade
 cd ../sample
 npm update && yarn upgrade
 
-cd ../vscode-dotnet-sdk-extension
-npm update && yarn upgrade
-
 cd ..
 ./build.sh  # or build.cmd on Windows
 ```
@@ -126,7 +122,6 @@ When version bumping IS requested:
 - Run `npm version patch` in `sample` after its updates
 - Update the corresponding CHANGELOG.md file with the new version and changes:
   - `vscode-dotnet-runtime-extension/CHANGELOG.md` for runtime extension
-  - `vscode-dotnet-sdk-extension/CHANGELOG.md` for SDK extension
 
 ### Fixing a Bug
 
@@ -167,7 +162,6 @@ vscode-dotnet-runtime/
 ├── vscode-dotnet-runtime-extension/  # Runtime extension
 │   ├── src/extension.ts              # Extension entry point
 │   └── src/test/functional/          # Functional tests (vscode-test)
-├── vscode-dotnet-sdk-extension/      # SDK extension
 ├── sample/                           # Sample demonstrating usage
 ├── build.sh / build.cmd              # Build scripts
 └── test.sh / test.cmd                # Test scripts
@@ -203,7 +197,7 @@ vscode-dotnet-runtime/
 ### Building a .VSIX Package
 
 ```bash
-cd vscode-dotnet-runtime-extension  # or vscode-dotnet-sdk-extension
+cd vscode-dotnet-runtime-extension
 npm install -g vsce
 vsce package --ignoreFile ../.vscodeignore --yarn
 ```
@@ -213,7 +207,6 @@ vsce package --ignoreFile ../.vscodeignore --yarn
 - [Contributing Guide](../Documentation/contributing.md)
 - [Contributing Workflow](../Documentation/contributing-workflow.md)
 - [Troubleshooting Runtime](../Documentation/troubleshooting-runtime.md)
-- [Troubleshooting SDK](../Documentation/troubleshooting-sdk.md)
 
 ## Quick Command Reference
 

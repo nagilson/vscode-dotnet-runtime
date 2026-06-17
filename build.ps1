@@ -52,19 +52,6 @@ if (! $?)
 }
 popd
 
-#################### Compile SDK extension ####################
-pushd vscode-dotnet-sdk-extension
-if (Test-Path node_modules) { rm -r -force node_modules }
-npm ci
-npm run compile
-
-if (! $?)
-{
-    Write-Host "`nBuild failed!" -ForegroundColor $errorColor
-    exit 1
-}
-popd
-
 #################### Compile sample extension ####################
 pushd sample
 if (Test-Path node_modules) { rm -r -force node_modules }

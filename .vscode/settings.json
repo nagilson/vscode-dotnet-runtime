@@ -23,7 +23,6 @@
     "eslint.workingDirectories": [
         "./vscode-dotnet-runtime-library",
         "./vscode-dotnet-runtime-extension",
-        "./vscode-dotnet-sdk-extension",
         "./sample"
     ]
 }

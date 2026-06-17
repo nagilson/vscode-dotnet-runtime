@@ -97,7 +97,7 @@ This command returns the available .NET SDK or runtime versions for download. It
 
 ### dotnet.recommendedVersion
 
-> **Sample:** See [`sample.dotnet-sdk.recommendedVersion`](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/sample/src/extension.ts) for a usage example.
+> **Sample:** See [`sample.dotnet.recommendedVersion`](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/sample/src/extension.ts) for a usage example.
 
 This command returns the recommended .NET version to install. It accepts an optional [IDotnetListVersionsContext](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetListVersionsContext.ts) and returns an [IDotnetListVersionsResult](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetListVersionsContext.ts) containing a single `IDotnetVersion`—the newest version in the `active` support phase. If no active-support version is available, the newest available version is returned instead.
 

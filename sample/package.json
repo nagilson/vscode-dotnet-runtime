@@ -106,41 +106,6 @@
 				"category": "Sample"
 			},
 			{
-				"command": "sample.dotnet-sdk.acquire",
-				"title": "Acquire .NET SDK",
-				"category": "Sample"
-			},
-			{
-				"command": "sample.dotnet-sdk.acquireGlobal",
-				"title": "Acquire .NET SDK on the machine globally using the SDK Extension. Requires admin.",
-				"category": "Sample"
-			},
-			{
-				"command": "sample.dotnet-sdk.acquireStatus",
-				"title": "Check the status of acquiring the .NET SDK",
-				"category": "Sample"
-			},
-			{
-				"command": "sample.dotnet-sdk.uninstallAll",
-				"title": "Uninstall all .NET SDKs",
-				"category": "Sample"
-			},
-			{
-				"command": "sample.dotnet-sdk.showAcquisitionLog",
-				"title": "Show .NET SDK acquisition log",
-				"category": "Sample"
-			},
-			{
-				"command": "sample.dotnet-sdk.listVersions",
-				"title": "Using the SDK Extension, list the newest versions of the .NET SDK or .NET Runtime.",
-				"category": "Sample"
-			},
-			{
-				"command": "sample.dotnet-sdk.recommendedVersion",
-				"title": "Show the recommended version of the SDK to install.",
-				"category": "Sample"
-			},
-			{
 				"command": "sample.dotnet.forceUpdate",
 				"title": "Force update of .NET runtimes",
 				"category": "Sample"
@@ -169,7 +134,6 @@
 		"open": "^8.4.2",
 		"vscode-dotnet-runtime": "file:../vscode-dotnet-runtime-extension",
 		"vscode-dotnet-runtime-library": "file:../vscode-dotnet-runtime-library",
-		"vscode-dotnet-sdk": "file:../vscode-dotnet-sdk-extension",
 		"webpack": "^5.95.0"
 	},
 	"devDependencies": {

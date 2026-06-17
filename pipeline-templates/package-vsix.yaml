@@ -26,7 +26,7 @@ jobs:
   steps:
   - template: install-node.yaml
   - bash: |
-      if ([ $(is-sdk-release) = 'True' ] && [ $(package-name) = 'vscode-dotnet-sdk' ]) || ([ $(is-runtime-release) = 'True' ] && [ $(package-name) = 'vscode-dotnet-runtime' ]); then
+      if [ $(is-runtime-release) = 'True' ] && [ $(package-name) = 'vscode-dotnet-runtime' ]; then
         VERSION=`node -p "require('./package.json').version"`
       else
         VERSION_NUM=`node -p "require('./package.json').version"`

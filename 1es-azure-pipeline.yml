@@ -8,7 +8,6 @@ trigger:
     - main
   tags:
     include:
-    - SDK-v*
     - Runtime-v*
 pr:
   autoCancel: false
@@ -19,8 +18,6 @@ pr:
 variables:
 - name: is-runtime-release
   value: $[startsWith(variables['Build.SourceBranch'], 'refs/tags/Runtime-v')]
-- name: is-sdk-release
-  value: $[startsWith(variables['Build.SourceBranch'], 'refs/tags/SDK-v')]
 - name: Codeql.Enabled
   value: true
 - name: MicroBuildOutputFolderOverride
