@@ -160,7 +160,7 @@ suite('DotnetCoreAcquisitionExtension End to End', function ()
         assert.isTrue(logContents.length > 0, 'Log file is non-empty after activation');
     }).timeout(standardTimeoutTime);
 
-    async function installRuntime(dotnetVersion: string, installMode: DotnetInstallMode, arch?: string)
+    async function installLocal(dotnetVersion: string, installMode: DotnetInstallMode, arch?: string)
     {
         let context: IDotnetAcquireContext = { version: dotnetVersion, requestingExtensionId, mode: installMode };
         if (arch)
@@ -254,7 +254,7 @@ suite('DotnetCoreAcquisitionExtension End to End', function ()
     async function findPathWithRequirementAndInstall(version: string, iMode: DotnetInstallMode, arch: string, condition: DotnetVersionSpecRequirement, shouldFind: boolean, contextToLookFor?: IDotnetAcquireContext, setPath = true,
         blockNoArch = false, dontCheckNonPaths = true)
     {
-        const installPath = await installRuntime(version, iMode, arch);
+        const installPath = await installLocal(version, iMode, arch);
 
         // use path.dirname : the dotnet.exe cant be on the PATH
         if (setPath)
@@ -305,12 +305,12 @@ suite('DotnetCoreAcquisitionExtension End to End', function ()
 
     test('Install Local Runtime Command', async () =>
     {
-        await installRuntime('2.2', 'runtime');
+        await installLocal('2.2', 'runtime');
     }).timeout(standardTimeoutTime);
 
     test('Install Local ASP.NET Runtime Command', async () =>
     {
-        await installRuntime('7.0', 'aspnetcore');
+        await installLocal('7.0', 'aspnetcore');
     }).timeout(standardTimeoutTime);
 
     test('Uninstall One Local Runtime Command', async () =>
@@ -355,19 +355,19 @@ suite('DotnetCoreAcquisitionExtension End to End', function ()
 
     test('Works With Prior Incomplete or Corrupted Install', async () =>
     {
-        const installPath = await installRuntime('9.0', 'runtime');
+        const installPath = await installLocal('9.0', 'runtime');
         assert.isTrue(fs.existsSync(installPath), 'The path exists after install');
         // remove the install executable but not the folder to simulate a corrupt install
         fs.rmSync(installPath, { recursive: true, force: true });
         assert.isFalse(fs.existsSync(installPath), 'The path does not exist after uninstall');
         // try to acquire again, and it should succeed
-        const _ = await installRuntime('9.0', 'runtime');
+        const _ = await installLocal('9.0', 'runtime');
     }).timeout(standardTimeoutTime);
 
     test('It works if the install exists', async () =>
     {
-        const installPath = await installRuntime('9.0', 'runtime');
-        const samePath = await installRuntime('9.0', 'runtime');
+        const installPath = await installLocal('9.0', 'runtime');
+        const samePath = await installLocal('9.0', 'runtime');
     }).timeout(standardTimeoutTime);
 
     test('Find dotnet PATH Command Met Condition', async () =>
@@ -481,7 +481,7 @@ suite('DotnetCoreAcquisitionExtension End to End', function ()
     {
         // First install a runtime that we'll try to find
         const version = '7.0';
-        const runtimePath = await installRuntime(version, 'runtime', os.arch());
+        const runtimePath = await installLocal(version, 'runtime', os.arch());
         assert.exists(runtimePath, 'Runtime should be installed successfully');
 
         const originalPath = process.env.PATH;
@@ -805,7 +805,7 @@ Paths: 'acquire returned: ${resultForAcquiringPathSettingRuntime.dotnetPath} whi
         // Install a runtime so there is a real host to discover, then arrange for that host to be off the PATH
         // (as happens on macOS GUI launches) while still being discoverable via DOTNET_ROOT. This lets us prove
         // that the findPath fallback is what recovers the install, and that it only runs when opted in.
-        const installPath = await installRuntime('6.0', 'runtime', os.arch());
+        const installPath = await installLocal('6.0', 'runtime', os.arch());
 
         const originalPath = process.env.PATH;
         const originalDotnetRoot = process.env.DOTNET_ROOT;
@@ -881,7 +881,7 @@ Paths: 'acquire returned: ${resultForAcquiringPathSettingRuntime.dotnetPath} whi
         const availableVersion = '8.0';
         try
         {
-            await installRuntime(availableVersion, 'runtime');
+            await installLocal(availableVersion, 'runtime');
 
             // Simulate offline mode by not allowing network requests
             process.env.DOTNET_INSTALL_TOOL_OFFLINE = '1';
@@ -919,9 +919,88 @@ Paths: 'acquire returned: ${resultForAcquiringPathSettingRuntime.dotnetPath} whi
         assert.equal(undefined, result, 'Acquire Status for no ASP.NET installed when Runtime is installed should not mistake Runtime Install as ASP.NET Install');
     }).timeout(standardTimeoutTime);
 
+    test('Local acquire rejects global SDK requests', async () =>
+    {
+        const context: IDotnetAcquireContext = { version: '8.0', requestingExtensionId, mode: 'sdk', installType: 'global' };
+        return assert.isRejected(vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquire', context));
+    }).timeout(standardTimeoutTime);
+
+    test('Local SDK acquire rejects major-only and feature-band versions', async () =>
+    {
+        for (const version of ['8', '8.0.4xx'])
+        {
+            const context: IDotnetAcquireContext = { version, requestingExtensionId, mode: 'sdk' };
+            await assert.isRejected(vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquire', context),
+                /major\.minor|fully-specified/i, `Local SDK acquire should reject "${version}"`);
+        }
+    }).timeout(standardTimeoutTime);
+
+    test('Install Local SDK Status Command', async () =>
+    {
+        const context: IDotnetAcquireContext = { version: '8.0', requestingExtensionId, mode: 'sdk' };
+
+        let result = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquireStatus', context);
+        assert.notExists(result, 'SDK is not installed before acquire');
+
+        result = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquire', context);
+        assert.exists(result!.dotnetPath, 'The local SDK install returns a path');
+        assert.include(result!.dotnetPath, '.dotnet', 'The local SDK install is under the .dotnet hive');
+
+        result = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquireStatus', context);
+        assert.exists(result, 'acquireStatus finds the installed local SDK');
+        assert.exists(result!.dotnetPath);
+    }).timeout(standardTimeoutTime * 4);
+
+    test('Fully-specified version round-trips through acquire, status, and uninstall', async () =>
+    {
+        const cases: { version: string; mode: DotnetInstallMode }[] = [
+            { version: '8.0.100', mode: 'sdk' }, // intentionally not the latest 8.0.xxx patch
+            { version: '9.0.0', mode: 'runtime' }, // intentionally not the latest 9.0.x patch
+        ];
+        for (const { version, mode } of cases)
+        {
+            const context: IDotnetAcquireContext = { version, requestingExtensionId, mode };
+
+            const acquired = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquire', context);
+            assert.exists(acquired!.dotnetPath, `${mode} ${version} installs`);
+            assert.include(acquired!.dotnetPath, version, 'The exact version is installed');
+
+            const status = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquireStatus', context);
+            assert.exists(status, `acquireStatus finds the fully-specified ${mode} ${version}`);
+            assert.include(status!.dotnetPath, version, 'status returns the exact pinned version');
+
+            const uninstallResult = await vscode.commands.executeCommand<string>('dotnet.uninstall', { ...context, installType: 'local' as DotnetInstallType });
+            assert.equal(uninstallResult, '0', `uninstall of fully-specified ${mode} ${version} succeeds`);
+            assert.isFalse(fs.existsSync(acquired!.dotnetPath!), 'the install is gone after uninstall');
+        }
+    }).timeout(standardTimeoutTime * 8);
+
+    test('Uninstalling a local SDK leaves local runtimes intact', async () =>
+    {
+        await installLocal('8.0', 'runtime');
+        const sdkContext: IDotnetAcquireContext = { version: '8.0', requestingExtensionId, mode: 'sdk' };
+        await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquire', sdkContext);
+
+        await vscode.commands.executeCommand<string>('dotnet.uninstall', { ...sdkContext, installType: 'local' as DotnetInstallType });
+
+        const runtimeStatus = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquireStatus',
+            { version: '8.0', requestingExtensionId, mode: 'runtime' });
+        assert.exists(runtimeStatus, 'Uninstalling a local SDK must not remove a local runtime');
+    }).timeout(standardTimeoutTime * 8);
+
+    test('Uninstall One Local SDK Command', async () =>
+    {
+        await installUninstallOne('8.0', '9.0', 'sdk', 'local');
+    }).timeout(standardTimeoutTime * 8);
+
+    test('Uninstall All Local SDK Command', async () =>
+    {
+        await installUninstallAll('8.0', 'sdk');
+    }).timeout(standardTimeoutTime * 4);
+
     test('resetData command wipes install', async () =>
     {
-        const dotnetPathRes = await installRuntime('9.0', 'runtime');
+        const dotnetPathRes = await installLocal('9.0', 'runtime');
         const uninstallRes = await vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.resetData');
         assert.exists(uninstallRes, 'The resetData command should return a result');
 
@@ -931,7 +1010,7 @@ Paths: 'acquire returned: ${resultForAcquiringPathSettingRuntime.dotnetPath} whi
 
     test('resetData command does not cause invalid state if other extensions use runtime', async () =>
     {
-        let dotnetPathRes = await installRuntime('9.0', 'runtime');
+        let dotnetPathRes = await installLocal('9.0', 'runtime');
         const openFileHandle = await fs.promises.open(dotnetPathRes, fs.constants.O_RDWR);
         try
         {
@@ -942,7 +1021,7 @@ Paths: 'acquire returned: ${resultForAcquiringPathSettingRuntime.dotnetPath} whi
             assert.isTrue(fs.existsSync(dotnetPathRes), 'The dotnet folder should exist after resetData command because it was in use');
 
             // Installing again after reset when prior file in use, should not throw an error
-            dotnetPathRes = await installRuntime('9.0', 'runtime');
+            dotnetPathRes = await installLocal('9.0', 'runtime');
         }
         finally
         {
@@ -952,7 +1031,7 @@ Paths: 'acquire returned: ${resultForAcquiringPathSettingRuntime.dotnetPath} whi
 
     test('Uninstall command does not proceed if dotnet.exe is open', async () =>
     {
-        const dotnetPath = await installRuntime('9.0', 'runtime');
+        const dotnetPath = await installLocal('9.0', 'runtime');
         const openFileHandle = await fs.promises.open(dotnetPath, fs.constants.O_RDWR);
 
         try
@@ -968,7 +1047,7 @@ Paths: 'acquire returned: ${resultForAcquiringPathSettingRuntime.dotnetPath} whi
 
     test('UninstallAll command does not proceed if dotnet.exe is open', async () =>
     {
-        const dotnetPath = await installRuntime('9.0', 'runtime');
+        const dotnetPath = await installLocal('9.0', 'runtime');
         const openFileHandle = await fs.promises.open(dotnetPath, fs.constants.O_RDWR);
 
         try
@@ -1011,7 +1090,7 @@ Paths: 'acquire returned: ${resultForAcquiringPathSettingRuntime.dotnetPath} whi
         const sessionStateKey = 'dotnet.returnedInstallDirectories';
 
         // Step 1: Install a runtime so the current session is tracked in state
-        await installRuntime('9.0', 'runtime');
+        await installLocal('9.0', 'runtime');
 
         // Verify the current session was registered
         const stateAfterInstall = mockState.get<Record<string, string[]>>(sessionStateKey, {});
