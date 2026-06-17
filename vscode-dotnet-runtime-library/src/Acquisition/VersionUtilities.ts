@@ -269,12 +269,12 @@ export function isNonSpecificMajorOrMajorMinorVersion(version: string): boolean
 export function assertValidLocalSdkVersion(version: string, eventStream: IEventStream, context: IAcquisitionWorkerContext): void
 {
     const segments = version.split('.').length;
-    // isFullySpecifiedVersion posts a parse event for non-three-part input, so gate it behind the segment count to avoid spurious telemetry for a valid major.minor.
+    // Keep valid major.minor requests from emitting long-form parse telemetry.
     if (segments === 2 && isNonSpecificMajorOrMajorMinorVersion(version))
     {
         return;
     }
-    // isFullySpecifiedVersion throws for malformed three-part input (e.g. '8.0.0' has no SDK band); treat a throw as invalid.
+    // Malformed three-part input is invalid.
     if (segments > 2)
     {
         try

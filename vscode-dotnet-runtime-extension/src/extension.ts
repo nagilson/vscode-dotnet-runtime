@@ -279,10 +279,10 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
                     `dotnet.acquire only performs local (user-folder) installs. For a system-wide SDK, call dotnet.acquireGlobalSDK instead.`);
             }
 
-            // Reject an invalid SDK version before the existing-install lookup so it cannot match an unrelated install by major.minor.
+            // Validate before any offline major.minor matching.
             assertValidLocalSdkContext(commandContext, workerContext);
 
-            // The existingDotnetPath setting points at a runtime to run on, not an SDK to build with, so it never overrides a local SDK install.
+            // existingDotnetPath is for extension runtimes, not SDK acquisition.
             if (!ignorePathSetting && mode !== 'sdk')
             {
                 const existingPath = await resolveExistingPathIfExists(existingPathConfigWorker, commandContext, workerContext, utilContext);
@@ -292,8 +292,7 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
                 }
             }
 
-            // If a fully specified version (e.g., 8.0.19) is requested and forceUpdate is undefined,
-            // set forceUpdate to true to skip the existing installation check and install the specific version requested.
+            // Fully specified requests target an exact install, not an existing major.minor match.
             if (isFullySpecifiedRequest(commandContext.version) && commandContext.forceUpdate === undefined)
             {
                 commandContext.forceUpdate = true;
@@ -311,8 +310,7 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
                 }
             }
 
-            // Note: This will impact the context object given to the worker and error handler since objects own a copy of a reference in JS.
-            // A fully specified version is used verbatim; a major.minor resolves to the latest patch for the mode.
+            // Keep pinned versions exact; resolve channels to their latest patch.
             const versionResolver = new VersionResolver(workerContext);
             commandContext.version = isFullySpecifiedRequest(commandContext.version) ? commandContext.version : await versionResolver.getFullVersion(commandContext.version, mode);
 
@@ -347,7 +345,7 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
     const dotnetAcquireGlobalSDKRegistration = vscode.commands.registerCommand(`${commandPrefix}.${commandKeys.acquireGlobalSDK}`, async (commandContext: IDotnetAcquireContext): Promise<IDotnetAcquireResult | undefined> =>
     {
         commandContext.mode = commandContext.mode ?? 'sdk' as DotnetInstallMode;
-        // Error/telemetry paths derive the install id from the context; without this they would classify a global SDK as a local install.
+        // Error/telemetry install ids depend on installType.
         commandContext.installType = commandContext.installType ?? 'global' as DotnetInstallType;
 
         if (commandContext.requestingExtensionId === undefined)
@@ -383,8 +381,7 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
             const globalInstallerResolver = new GlobalInstallerResolver(workerContext, commandContext.version);
             fullyResolvedVersion = await globalInstallerResolver.getFullySpecifiedVersion();
 
-            // Reset context to point to the fully specified version so it is not possible for someone to access incorrect data during the install process.
-            // Note: This will impact the context object given to the worker and error handler since objects own a copy of a reference in JS.
+            // Keep the shared context aligned with the resolved version.
             commandContext.version = fullyResolvedVersion;
             telemetryObserver?.setAcquisitionContext(workerContext, commandContext);
 
@@ -500,8 +497,7 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
             globalEventStream.post(new DotnetAcquisitionStatusRequested(commandContext.version, commandContext.requestingExtensionId));
             assertValidLocalSdkContext(commandContext, workerContext);
 
-            // A fully specified version is checked exactly by acquireStatus (an offline install-id lookup), so the
-            // major.minor offline shortcut and resolution are only for a major.minor request.
+            // Pinned versions are checked exactly; channels can use offline matching/resolution.
             if (!isFullySpecifiedRequest(commandContext.version))
             {
                 const existingOfflinePath = await getExistingInstallOffline(worker, workerContext);
@@ -875,8 +871,7 @@ ${JSON.stringify(commandContext)}`));
                 const ctx = workerContext ?? getAcquisitionWorkerContext(commandContext.mode, commandContext);
                 assertValidLocalSdkContext(commandContext, ctx);
 
-                // A fully specified version targets an exact install id, so resolve only a major.minor request to its
-                // latest patch. force (UI) and auto-update both pass fully specified versions and so already skip this.
+                // Pinned versions target exact install ids; local channels resolve before uninstall.
                 if (commandContext.installType === 'local' && !force && !isFullySpecifiedRequest(commandContext.version))
                 {
                     const versionResolver = new VersionResolver(ctx);

@@ -84,8 +84,7 @@ export class LocalInstallUpdateService extends IInstallManagementService
 
     private async getInstallGroups(): Promise<Map<InstallGroup, InstallRecord[]>>
     {
-        // Auto-update every local install (runtime, aspnet, and sdk). Global installs are user/OS-managed and
-        // are excluded via the structured isGlobal field, never id-string parsing (a global SDK id has no ~sdk marker).
+        // Global installs are user/OS-managed, so only local installs are updated here.
         const localInstalls = (await this.installTrackerType.getInstance(this.eventStream, this.extensionState).getExistingInstalls(this.managementDirectoryProvider, false)).filter(i => i.dotnetInstall.isGlobal !== true);
         const installGroupsToInstalls = new Map<string, { key: InstallGroup; installs: InstallRecord[] }>();
         const currentArchitecture = DotnetCoreAcquisitionWorker.defaultArchitecture();
@@ -96,9 +95,7 @@ export class LocalInstallUpdateService extends IInstallManagementService
             const architecture = install.dotnetInstall.architecture || currentArchitecture;
             const mode = install.dotnetInstall.installMode;
 
-            // Skip installs for architectures that do not match the current machine.
-            // Attempting to update an incompatible-architecture install would download and then try to
-            // execute a binary the current OS/process cannot run (e.g. arm64 .NET on an x64 machine).
+            // Do not update installs the current process cannot execute.
             if (architecture !== currentArchitecture)
             {
                 this.eventStream.post(new SkippingIncompatibleArchitectureInstall(

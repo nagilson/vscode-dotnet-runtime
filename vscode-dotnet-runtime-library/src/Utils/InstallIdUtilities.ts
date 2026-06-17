@@ -22,9 +22,7 @@ export function getInstallIdCustomArchitecture(version: string, architecture: st
         architecture = DotnetCoreAcquisitionWorker.defaultArchitecture();
     }
 
-    // Local SDK ids carry a ~sdk marker (like ~aspnetcore) so they never collide with a local runtime id.
-    // Global SDK ids stay unmarked: -global already implies SDK, and re-tagging would orphan existing
-    // global-SDK records and force an elevated reinstall.
+    // Local SDK install ids include '~sdk' while global SDK ids do not to support legacy install ids.
     const localModeSuffix = mode === 'aspnetcore' ? '~aspnetcore' : mode === 'sdk' ? '~sdk' : '';
 
     return installType === 'global' ? `${version}-global~${architecture}${mode === 'aspnetcore' ? '~aspnetcore' : ''}` :
