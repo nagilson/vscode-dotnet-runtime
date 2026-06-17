@@ -233,6 +233,19 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
         return acquireLocal(commandContext);
     });
 
+    function isFullySpecifiedRequest(version: string): boolean
+    {
+        return version.split('.').length > 2;
+    }
+
+    function assertValidLocalSdkContext(commandContext: IDotnetAcquireContext, workerContext: IAcquisitionWorkerContext): void
+    {
+        if (commandContext.mode === 'sdk' && commandContext.installType !== 'global')
+        {
+            assertValidLocalSdkVersion(commandContext.version, globalEventStream, workerContext);
+        }
+    }
+
     async function acquireLocal(commandContext: IDotnetAcquireContext, ignorePathSetting = false): Promise<IDotnetAcquireResult | undefined>
     {
         const worker = getAcquisitionWorker();
@@ -267,10 +280,7 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
             }
 
             // Reject an invalid SDK version before the existing-install lookup so it cannot match an unrelated install by major.minor.
-            if (mode === 'sdk')
-            {
-                assertValidLocalSdkVersion(commandContext.version, globalEventStream, workerContext);
-            }
+            assertValidLocalSdkContext(commandContext, workerContext);
 
             // The existingDotnetPath setting points at a runtime to run on, not an SDK to build with, so it never overrides a local SDK install.
             if (!ignorePathSetting && mode !== 'sdk')
@@ -284,7 +294,7 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
 
             // If a fully specified version (e.g., 8.0.19) is requested and forceUpdate is undefined,
             // set forceUpdate to true to skip the existing installation check and install the specific version requested.
-            if (commandContext.version.split('.').length > 2 && commandContext.forceUpdate === undefined)
+            if (isFullySpecifiedRequest(commandContext.version) && commandContext.forceUpdate === undefined)
             {
                 commandContext.forceUpdate = true;
             }
@@ -304,7 +314,7 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
             // Note: This will impact the context object given to the worker and error handler since objects own a copy of a reference in JS.
             // A fully specified version is used verbatim; a major.minor resolves to the latest patch for the mode.
             const versionResolver = new VersionResolver(workerContext);
-            commandContext.version = commandContext.version.split('.')?.length > 2 ? commandContext.version : await versionResolver.getFullVersion(commandContext.version, mode);
+            commandContext.version = isFullySpecifiedRequest(commandContext.version) ? commandContext.version : await versionResolver.getFullVersion(commandContext.version, mode);
 
             const acquisitionInvoker = new AcquisitionInvoker(workerContext, utilContext);
             switch (mode)
@@ -488,10 +498,11 @@ export function activate(vsCodeContext: vscode.ExtensionContext, extensionContex
             const workerContext = getAcquisitionWorkerContext(commandContext.mode, commandContext);
 
             globalEventStream.post(new DotnetAcquisitionStatusRequested(commandContext.version, commandContext.requestingExtensionId));
+            assertValidLocalSdkContext(commandContext, workerContext);
 
             // A fully specified version is checked exactly by acquireStatus (an offline install-id lookup), so the
             // major.minor offline shortcut and resolution are only for a major.minor request.
-            if (commandContext.version.split('.').length <= 2)
+            if (!isFullySpecifiedRequest(commandContext.version))
             {
                 const existingOfflinePath = await getExistingInstallOffline(worker, workerContext);
                 if (existingOfflinePath)
@@ -862,11 +873,11 @@ ${JSON.stringify(commandContext)}`));
                 const worker = getAcquisitionWorker();
                 // Use the pre-created workerContext if available, otherwise create it
                 const ctx = workerContext ?? getAcquisitionWorkerContext(commandContext.mode, commandContext);
+                assertValidLocalSdkContext(commandContext, ctx);
 
                 // A fully specified version targets an exact install id, so resolve only a major.minor request to its
                 // latest patch. force (UI) and auto-update both pass fully specified versions and so already skip this.
-                const versionIsFullySpecified = commandContext.version.split('.').length > 2;
-                if (commandContext.installType === 'local' && !force && !versionIsFullySpecified)
+                if (commandContext.installType === 'local' && !force && !isFullySpecifiedRequest(commandContext.version))
                 {
                     const versionResolver = new VersionResolver(ctx);
                     const resolvedVersion = await versionResolver.getFullVersion(commandContext.version, commandContext.mode);

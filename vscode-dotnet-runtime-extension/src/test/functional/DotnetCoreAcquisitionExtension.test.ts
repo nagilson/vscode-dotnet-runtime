@@ -921,7 +921,7 @@ Paths: 'acquire returned: ${resultForAcquiringPathSettingRuntime.dotnetPath} whi
 
     test('Local acquire rejects global SDK requests', async () =>
     {
-        const context: IDotnetAcquireContext = { version: '8.0', requestingExtensionId, mode: 'sdk', installType: 'global' };
+        const context: IDotnetAcquireContext = { version: '8.0', requestingExtensionId, mode: 'sdk', installType: 'global', rethrowError: true };
         return assert.isRejected(vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquire', context));
     }).timeout(standardTimeoutTime);
 
@@ -929,9 +929,22 @@ Paths: 'acquire returned: ${resultForAcquiringPathSettingRuntime.dotnetPath} whi
     {
         for (const version of ['8', '8.0.4xx'])
         {
-            const context: IDotnetAcquireContext = { version, requestingExtensionId, mode: 'sdk' };
+            const context: IDotnetAcquireContext = { version, requestingExtensionId, mode: 'sdk', rethrowError: true };
             await assert.isRejected(vscode.commands.executeCommand<IDotnetAcquireResult>('dotnet.acquire', context),
                 /major\.minor|fully-specified/i, `Local SDK acquire should reject "${version}"`);
+        }
+    }).timeout(standardTimeoutTime);
+
+    test('Local SDK status and uninstall reject major-only and feature-band versions', async () =>
+    {
+        for (const command of ['dotnet.acquireStatus', 'dotnet.uninstall'])
+        {
+            for (const version of ['8', '8.0.4xx'])
+            {
+                const context: IDotnetAcquireContext = { version, requestingExtensionId, mode: 'sdk', installType: 'local', rethrowError: true };
+                await assert.isRejected(vscode.commands.executeCommand<IDotnetAcquireResult | string>(command, context),
+                    /major\.minor|fully-specified/i, `${command} should reject local SDK version "${version}"`);
+            }
         }
     }).timeout(standardTimeoutTime);
 
