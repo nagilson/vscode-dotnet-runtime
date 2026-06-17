@@ -84,11 +84,13 @@ export class LocalInstallUpdateService extends IInstallManagementService
 
     private async getInstallGroups(): Promise<Map<InstallGroup, InstallRecord[]>>
     {
-        const runtimeInstalls = (await this.installTrackerType.getInstance(this.eventStream, this.extensionState).getExistingInstalls(this.managementDirectoryProvider, false)).filter(i => i.dotnetInstall.installMode !== 'sdk' && i.dotnetInstall.isGlobal !== true);
+        // Auto-update every local install (runtime, aspnet, and sdk). Global installs are user/OS-managed and
+        // are excluded via the structured isGlobal field, never id-string parsing (a global SDK id has no ~sdk marker).
+        const localInstalls = (await this.installTrackerType.getInstance(this.eventStream, this.extensionState).getExistingInstalls(this.managementDirectoryProvider, false)).filter(i => i.dotnetInstall.isGlobal !== true);
         const installGroupsToInstalls = new Map<string, { key: InstallGroup; installs: InstallRecord[] }>();
         const currentArchitecture = DotnetCoreAcquisitionWorker.defaultArchitecture();
 
-        for (const install of runtimeInstalls)
+        for (const install of localInstalls)
         {
             const majorMinor = versionUtils.getMajorMinorFromValidVersion(install.dotnetInstall.version);
             const architecture = install.dotnetInstall.architecture || currentArchitecture;
