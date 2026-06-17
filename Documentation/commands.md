@@ -14,11 +14,21 @@ This article outlines the commands exposed by the .NET Install Tool. To see thes
 
 This command will install a .NET runtime at a user-level folder. It accepts a [IDotnetAcquireContext](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetAcquireContext.ts) object and returns a [IDotnetAcquireResult](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetAcquireResult.ts), which contains the path to the .NET runtime executable. The extension will automatically identify and install the latest patch of the provided version. It is generally recommended that extension authors call this command immediately on every extension start up to ensure that the .NET runtime has been installed and is ready to use.
 
-The `version` must be a major.minor version (e.g. `8.0`).
+The `mode` field of the context selects what to install: `runtime` (default), `aspnetcore`, or `sdk`. With `mode: 'sdk'` this command installs a **local (user-folder) .NET SDK**. Local SDKs do **not** configure the `PATH`; the caller receives the install path via `IDotnetAcquireResult.dotnetPath` and is responsible for using it. To install a system-wide SDK instead, use [`dotnet.acquireGlobalSDK`](#dotnetacquireglobalsdk). Requesting `installType: 'global'` from `dotnet.acquire` is rejected.
+
+Accepted `version` formats depend on the command and mode:
+
+| Command (mode) | `major` (`8`) | `major.minor` (`8.0`) | feature band (`8.0.4xx`) | fully specified (`8.0.404`) |
+| --- | :---: | :---: | :---: | :---: |
+| `dotnet.acquire` runtime / aspnetcore | ❌ | ✅ | ❌ | ⚠️ testing-only |
+| `dotnet.acquire` sdk (local) | ❌ | ✅ | ❌ | ✅ |
+| `dotnet.acquireGlobalSDK` (sdk, global) | ✅ | ✅ | ✅ | ✅ |
+
+For runtime/aspnetcore the supported format is `major.minor` (a fully specified version is accepted only as an unsupported testing affordance). For a local SDK, both `major.minor` (resolved to the latest patch) and a fully specified version (e.g. `8.0.404`, installed exactly) are supported; major-only and feature band requests are rejected with a message pointing at `dotnet.acquireGlobalSDK`.
+
+**Automatic updates:** Locally installed runtimes **and SDKs** acquired through this command are automatically kept up to date. Approximately 5 minutes after VS Code launches (and at most once every 24 hours), the extension checks for newer patch versions of each installed major.minor runtime. If a newer patch is available, it is downloaded and the outdated patch is uninstalled—provided no other extension still depends on it. Ownership of the install is transferred so that all extensions that depended on the old version now reference the new one. This update runs silently; errors are surfaced as non-blocking warnings. The update is skipped entirely if the machine is offline. Local SDK auto-updates follow the channel's latest SDK and may cross feature bands (e.g. `8.0.3xx` → `8.0.4xx`); global SDKs are not auto-updated.
 
 **Offline behavior:** If the machine is offline (or `forceUpdate` is not set), the extension will return an existing compatible installation matching the requested major.minor version instead of contacting the network. If no compatible install exists while offline, a warning is posted and the install attempt will eventually time out.
-
-**Automatic updates:** Locally installed runtimes acquired through this command are automatically kept up to date. Approximately 5 minutes after VS Code launches (and at most once every 24 hours), the extension checks for newer patch versions of each installed major.minor runtime. If a newer patch is available, it is downloaded and the outdated patch is uninstalled—provided no other extension still depends on it. Ownership of the install is transferred so that all extensions that depended on the old version now reference the new one. This update runs silently; errors are surfaced as non-blocking warnings. The update is skipped entirely if the machine is offline.
 
 ### dotnet.acquireGlobalSDK
 
@@ -38,7 +48,7 @@ The `version` accepts multiple formats:
 
 > **Sample:** See [`sample.dotnet.acquireStatus`](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/sample/src/extension.ts) for a usage example.
 
-This command checks the status of a .NET installation without triggering a new acquisition. It accepts a [IDotnetAcquireContext](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetAcquireContext.ts) object and returns a [IDotnetAcquireResult](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetAcquireResult.ts) if the requested version is already installed, or `undefined` if it is not. Note that `acquireStatus` expects only a major.minor version, so fully specified versions will not be checked.
+This command checks the status of a .NET installation without triggering a new acquisition. It accepts a [IDotnetAcquireContext](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetAcquireContext.ts) object and returns a [IDotnetAcquireResult](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetAcquireResult.ts) if the requested version is already installed, or `undefined` if it is not. It accepts either a major.minor version (resolved to the latest patch) or a fully specified version (matched exactly), for any `mode` including `sdk`.
 
 **Offline behavior:** If a compatible existing installation is found locally, it is returned immediately without network access. Version resolution to a full patch version does require network access; if offline with no cached install, the command will fail.
 
@@ -97,7 +107,7 @@ It is not aware of project or repo level requirements such as `global.json`, or 
 
 ### dotnet.uninstall
 
-You can execute this command to dereference / uninstall .NET, either the SDK or runtime, as long as it's managed by this extension. Pass it a [IDotnetAcquireContext](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetAcquireContext.ts) object containing the `version`, `mode`, `installType`, and `requestingExtensionId` of the install you want to remove. Returns `'0'` on success.
+You can execute this command to dereference / uninstall .NET, either the SDK or runtime, as long as it's managed by this extension. Pass it a [IDotnetAcquireContext](https://github.com/dotnet/vscode-dotnet-runtime/blob/main/vscode-dotnet-runtime-library/src/IDotnetAcquireContext.ts) object containing the `version`, `mode`, `installType`, and `requestingExtensionId` of the install you want to remove. The `version` may be a major.minor (resolved to the latest patch) or a fully specified version (removed exactly). Returns `'0'` on success.
 
 .NET will only be completely uninstalled if all extensions that relied on that version of .NET asked for it to be uninstalled.
 Note that users can manually uninstall any version of .NET if they so choose and accept the risk.
