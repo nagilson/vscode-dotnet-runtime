@@ -322,7 +322,8 @@ export class DotnetAcquisitionFinalError extends GenericModalEvent
  * This allows us to count all errors and analyze them into categories.
  * The event name for the failure cause is stored in the originalEventName property.
  */
-abstract class DotnetAcquisitionFinalErrorBase extends DotnetAcquisitionError{
+abstract class DotnetAcquisitionFinalErrorBase extends DotnetAcquisitionError
+{
 
     constructor(public readonly error: Error, public readonly originalEventName: string, public readonly install: DotnetInstall)
     {

@@ -5,7 +5,6 @@
 import * as chai from 'chai';
 import * as os from 'os';
 import { GetDotnetInstallInfo } from '../../Acquisition/DotnetInstall';
-import { DotnetInstallType } from '../../IDotnetAcquireContext';
 import
 {
     DotnetAcquisitionFinalError,
@@ -22,6 +21,7 @@ import
     DotnetLocalSDKAcquisitionTotalSuccessEvent,
 } from '../../EventStream/EventStreamEvents';
 import { ModalEventRepublisher } from '../../EventStream/ModalEventPublisher';
+import { DotnetInstallType } from '../../IDotnetAcquireContext';
 import { MockEventStream } from '../mocks/MockObjects';
 
 const assert = chai.assert;

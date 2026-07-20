@@ -14,8 +14,7 @@ import
     IDotnetAcquireContext,
     IDotnetAcquireResult,
     IDotnetFindPathContext,
-    IDotnetListVersionsResult,
-    IDotnetLogResult,
+    IDotnetLogResult
 } from 'vscode-dotnet-runtime-library';
 
 export function activate(context: vscode.ExtensionContext)
